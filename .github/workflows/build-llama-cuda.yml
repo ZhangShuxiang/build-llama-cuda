@@ -6,12 +6,13 @@ on:
       cuda_version:
         description: 'CUDA Version'
         required: false
-        default: '12.6'
+        default: '13.2'
         type: choice
         options:
           - '11.8'
           - '12.4'
           - '12.6'
+          - '13.2'
       build_type:
         description: 'Build Type'
         required: false
