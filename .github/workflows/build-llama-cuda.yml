@@ -87,7 +87,8 @@ jobs:
           -DCMAKE_EXE_LINKER_FLAGS="-static-libstdc++ -static-libgcc"
         
         # 编译 (使用所有CPU核心)
-        make -j$(nproc)
+        make -j1
+        # make -j$(nproc)
         
         # 验证编译产物
         ls -la bin/
