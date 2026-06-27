@@ -37,31 +37,14 @@ jobs:
     
     steps:
     # ============================================
-    # 步骤1: 检出代码（包含脚本和工作流）
-    # ============================================
-    - name: Checkout repository
-      uses: actions/checkout@v4
-      with:
-        fetch-depth: 0  # 获取完整历史，用于版本标记
-    
-    # ============================================
-    # 步骤2: 安装系统依赖
+    # 步骤1: 安装系统依赖
     # ============================================
     - name: Install system dependencies
       run: |
-        sudo apt-get update
-        sudo apt-get install -y \
-          build-essential \
-          cmake \
-          git \
-          wget \
-          curl \
-          libcurl4-openssl-dev \
-          libssl-dev \
-          pkg-config
-    
+        sudo -E apt -qqy update
+        sudo -E apt -qqy install -y build-essential cmake git wget curl libcurl4-openssl-dev libssl-dev pkg-config
     # ============================================
-    # 步骤3: 安装CUDA Toolkit (无驱动)
+    # 步骤2: 安装CUDA Toolkit (无驱动)
     # ============================================
     - name: Install CUDA Toolkit
       env:
@@ -71,23 +54,17 @@ jobs:
         wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.1-1_all.deb
         sudo dpkg -i cuda-keyring_1.1-1_all.deb
         sudo apt-get update
-        
         # 安装CUDA Toolkit (仅编译器+库，不装驱动)
         sudo apt-get install -y cuda-toolkit-${CUDA_VERSION//./-}
-        
         # 设置环境变量
         echo "CUDA_PATH=/usr/local/cuda" >> $GITHUB_ENV
         echo "/usr/local/cuda/bin" >> $GITHUB_PATH
         echo "LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH" >> $GITHUB_ENV
-        
     # ============================================
-    # 步骤3.2: 验证CUDA
+    # 步骤3: 拉取代码
     # ============================================
-    - name: Verify CUDA installation
-      run: |
-        nvcc --version
-        echo "CUDA installed successfully"
-    
+    - name: Clone source code
+      run: git clone https://github.com/ggml-org/llama.cpp.git $GITHUB_WORKSPACE/llama
     # ============================================
     # 步骤4: 编译llama.cpp (带CUDA支持)
     # ============================================
@@ -96,7 +73,7 @@ jobs:
         CUDA_ARCHS: ${{ matrix.cuda_architectures }}
         BUILD_TYPE: ${{ github.event.inputs.build_type || 'Release' }}
       run: |
-        mkdir -p build && cd build
+        cd llama
         
         # CMake配置
         cmake .. \
@@ -120,7 +97,7 @@ jobs:
     # ============================================
     - name: Collect CUDA runtime libraries
       run: |
-        cd build/bin
+        cd llama/bin
         mkdir -p libs
         
         # 复制CUDA运行时库
@@ -138,7 +115,7 @@ jobs:
     # ============================================
     - name: Package artifacts with scripts
       run: |
-        cd build
+        cd llama
         
         # 创建包目录结构
         PACKAGE_DIR="llama-cuda-package"
@@ -182,23 +159,6 @@ jobs:
             echo "✅ 复制 llama_server.conf"
         else
             echo "⚠️  警告: llama_server.conf 不存在于仓库根目录"
-            # 创建默认配置文件
-            cat > $PACKAGE_DIR/llama_server.conf << 'EOF'
-            # llama-server 默认配置文件
-            # 请修改 MODEL_PATH 为实际模型路径
-            
-            MODEL_PATH="/path/to/your/model.gguf"
-            HOST="0.0.0.0"
-            PORT="8080"
-            USE_GPU=true
-            GPU_LAYERS=-1
-            CONTEXT_SIZE=4096
-            BATCH_SIZE=512
-            OPENAI_COMPAT=true
-            API_KEY=""
-            VERBOSE=1
-            EOF
-            echo "✅ 创建默认 llama_server.conf"
         fi
         
         # 复制额外脚本（如果有）
