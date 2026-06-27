@@ -165,7 +165,7 @@ jobs:
           -DBUILD_SHARED_LIBS=OFF \
           -DCMAKE_C_COMPILER=$(which gcc) \
           -DCMAKE_CXX_COMPILER=$(which g++) \
-          -DCMAKE_EXE_LINKER_FLAGS="-static-libstdc++ -static-libgcc"
+          -DCMAKE_EXE_LINKER_FLAGS=""
         
         # 编译 (使用 Ninja)
         ninja -j$(nproc)
@@ -249,8 +249,8 @@ jobs:
         # ============================================
         echo "📁 复制启动脚本..."
         for script in start_llama_server.sh stop_llama_server.sh llama_server.conf health_check.sh; do
-          if [ -f "../$script" ]; then
-            cp "../$script" $PACKAGE_DIR/
+          if [ -f "../../$script" ]; then
+            cp "../../$script" $PACKAGE_DIR/
             [[ "$script" == *.sh ]] && chmod +x $PACKAGE_DIR/$script
             echo "  ✅ $script"
           fi
