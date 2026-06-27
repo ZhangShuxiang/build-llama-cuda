@@ -76,7 +76,7 @@ jobs:
         cd llama
         
         # CMake配置
-        cmake .. \
+        cmake \
           -DGGML_CUDA=ON \
           -DCMAKE_CUDA_ARCHITECTURES="$CUDA_ARCHS" \
           -DCMAKE_BUILD_TYPE="$BUILD_TYPE" \
