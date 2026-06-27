@@ -80,8 +80,13 @@ jobs:
         echo "/usr/local/cuda/bin" >> $GITHUB_PATH
         echo "LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH" >> $GITHUB_ENV
         
-        # 验证安装
+    # ============================================
+    # 步骤3.2: 验证CUDA
+    # ============================================
+    - name: Verify CUDA installation
+      run: |
         nvcc --version
+        echo "CUDA installed successfully"
     
     # ============================================
     # 步骤4: 编译llama.cpp (带CUDA支持)
