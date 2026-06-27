@@ -197,3 +197,173 @@ jobs:
         # llama.cpp CUDA 包 (OpenAI兼容)
         
         ## 📦 包结构
+        ```
+        llama-cuda-package/
+        ├── bin/                    # 可执行文件
+        │   ├── llama-server        # API服务器（主程序）
+        │   ├── llama-cli           # 命令行推理
+        │   ├── llama-perplexity    # 困惑度测试
+        │   └── llama-bench         # 性能测试
+        ├── libs/                   # CUDA运行时库
+        │   ├── libcudart.so.*
+        │   ├── libcublas.so.*
+        │   └── libcublasLt.so.*
+        ├── start_llama_server.sh   # 启动脚本
+        ├── stop_llama_server.sh    # 停止脚本
+        ├── llama_server.conf       # 配置文件
+        ├── logs/                   # 日志目录
+        ├── VERSION.txt             # 版本信息
+        └── README.md               # 本文件
+        ```
+        
+        ## 🚀 快速启动
+        
+        ### 1. 解压
+        ```bash
+        tar -xzf llama-cuda-ubuntu2204-*.tar.gz
+        cd llama-cuda-package
+        ```
+        
+        ### 2. 配置
+        ```bash
+        vim llama_server.conf
+        # 必须修改: MODEL_PATH="/path/to/your/model.gguf"
+        ```
+        
+        ### 3. 启动
+        ```bash
+        ./start_llama_server.sh
+        ```
+        
+        ### 4. 测试
+        ```bash
+        # 健康检查
+        curl http://localhost:8080/health
+        
+        # OpenAI兼容接口
+        curl http://localhost:8080/v1/chat/completions \\
+          -H "Content-Type: application/json" \\
+          -d '{
+            "model": "llama",
+            "messages": [{"role": "user", "content": "Hello"}],
+            "max_tokens": 100
+          }'
+        ```
+        
+        ### 5. 停止
+        ```bash
+        ./stop_llama_server.sh
+        ```
+        
+        ## 🔧 配置说明
+        
+        编辑 `llama_server.conf` 调整参数：
+        - `MODEL_PATH`: 模型文件路径（必需）
+        - `PORT`: 服务端口（默认8080）
+        - `USE_GPU`: 启用GPU加速
+        - `GPU_LAYERS`: GPU卸载层数（-1=全部）
+        - `CONTEXT_SIZE`: 上下文长度
+        - `API_KEY`: API密钥（生产环境建议设置）
+        
+        ## 📊 监控
+        
+        ```bash
+        # 查看日志
+        tail -f logs/llama_server_*.log
+        
+        # 查看进程
+        ps aux | grep llama-server
+        ```
+        
+        ## ⚠️ 系统要求
+        
+        - NVIDIA GPU (Compute Capability ≥ 5.2)
+        - NVIDIA驱动版本 ≥ 535.xx
+        - Ubuntu 20.04/22.04 或兼容系统
+        - 内存 ≥ 8GB (推荐16GB+)
+        
+        ## 🔗 OpenAI兼容端点
+        
+        - `GET /v1/models` - 列出模型
+        - `POST /v1/chat/completions` - 聊天补全
+        - `POST /v1/completions` - 文本补全
+        - `POST /v1/embeddings` - 文本嵌入
+        - `GET /health` - 健康检查
+        - `GET /metrics` - Prometheus指标
+        
+        ## 🆘 故障排查
+        
+        ### CUDA库找不到
+        ```bash
+        export LD_LIBRARY_PATH=$PWD/libs:$LD_LIBRARY_PATH
+        ```
+        
+        ### 端口被占用
+        ```bash
+        # 修改 llama_server.conf 中的 PORT
+        PORT=8081
+        ```
+        
+        ### 模型加载失败
+        ```bash
+        # 检查模型文件路径和格式
+        file /path/to/model.gguf
+        ```
+        EOF
+        
+        # ============================================
+        # 打包
+        # ============================================
+        PACKAGE_NAME="llama-cuda-ubuntu2204-${{ github.event.inputs.build_type || 'Release' }}-${{ github.sha }}"
+        tar -czf ${PACKAGE_NAME}.tar.gz $PACKAGE_DIR/
+        
+        # 生成校验和
+        sha256sum ${PACKAGE_NAME}.tar.gz > checksum.txt
+        
+        echo ""
+        echo "✅ 打包完成: ${PACKAGE_NAME}.tar.gz"
+        ls -lh ${PACKAGE_NAME}.tar.gz
+    
+    # ============================================
+    # 步骤7: 上传产物到GitHub Actions
+    # ============================================
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: llama-cuda-ubuntu2204-${{ github.event.inputs.build_type || 'Release' }}-${{ github.sha }}
+        path: |
+          llama/llama-cuda-*.tar.gz
+          llama/checksum.txt
+        retention-days: 30
+        compression-level: 6
+    
+    # ============================================
+    # 步骤8: (可选) 发布到GitHub Release
+    # ============================================
+    - name: Create Release
+      if: startsWith(github.ref, 'refs/tags/')
+      uses: softprops/action-gh-release@v1
+      with:
+        files: |
+          llama/llama-cuda-*.tar.gz
+          llama/checksum.txt
+        draft: false
+        prerelease: false
+        generate_release_notes: true
+        name: "llama.cpp CUDA ${{ github.ref_name }}"
+        body: |
+          ## 🚀 llama.cpp CUDA 包
+          
+          ### 包含内容
+          - ✅ 预编译的llama-server (OpenAI兼容)
+          - ✅ CUDA 12.x 运行时库
+          - ✅ 启动/停止脚本
+          - ✅ 配置文件模板
+          
+          ### 使用方法
+          查看包内的 README.md
+          
+          ### 构建信息
+          - 构建日期: $(date -u +"%Y-%m-%d")
+          - CUDA架构: ${{ matrix.cuda_architectures }}
+          - 构建类型: ${{ github.event.inputs.build_type || 'Release' }}
