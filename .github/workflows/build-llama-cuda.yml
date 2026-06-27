@@ -6,12 +6,12 @@ on:
       cuda_version:
         description: 'CUDA Version'
         required: false
-        default: '13.2'
+        default: '12.6'  # ✅ 默认改为 12.6（CUDA 13.2 可能还不稳定）
         type: choice
         options:
-          - '13.2'
           - '12.4'
           - '12.6'
+          - '13.2'
       build_type:
         description: 'Build Type'
         required: false
@@ -21,19 +21,27 @@ on:
           - 'Release'
           - 'Debug'
           - 'RelWithDebInfo'
+      cuda_arch:
+        description: 'CUDA Architectures'
+        required: false
+        default: '80;86;89'
+        type: choice
+        options:
+          - '60;61;70;75;80;86;89'  # 广泛兼容 (Pascal+)
+          - '70;75;80;86;89'        # Volta+ (V100, RTX 20/30/40)
+          - '80;86;89'              # Ampere+ (RTX 30/40)
+          - '89;90'                 # Ada Lovelace + Hopper
 
 jobs:
   build-linux-cuda:
-    name: Build Linux CUDA Package
+    name: Build CUDA Package
     runs-on: ubuntu-latest
+    timeout-minutes: 60  # ✅ 超时保护
     
-    strategy:
-      matrix:
-        cuda_architectures:
-        #   - "52;61;70;75;80;86;89"  # 通用架构（GTX 10xx 到 RTX 40系列）
-        # 如需特定架构可取消注释：
-        - "80;86;89"  # 仅Ampere+ (RTX 30/40系列)
-        # - "90"        # 仅Hopper (H100)
+    env:
+      CUDA_ARCHS: ${{ github.event.inputs.cuda_arch || '80;86;89' }}
+      BUILD_TYPE: ${{ github.event.inputs.build_type || 'Release' }}
+      CUDA_VERSION: ${{ github.event.inputs.cuda_version || '12.6' }}
     
     steps:
     # ============================================
@@ -41,330 +49,283 @@ jobs:
     # ============================================
     - name: Install system dependencies
       run: |
-        sudo -E apt -qqy update
-        sudo -E apt -qqy install -y build-essential cmake git wget curl libcurl4-openssl-dev libssl-dev pkg-config
+        sudo apt-get update
+        sudo apt-get install -y \
+          build-essential \
+          cmake \
+          git \
+          wget \
+          curl \
+          libcurl4-openssl-dev \
+          libssl-dev \
+          pkg-config \
+          ninja-build \
+          gcc-11 \
+          g++-11 \
+          software-properties-common
+
     # ============================================
-    # 步骤2: 安装CUDA Toolkit (无驱动)
+    # 步骤2: 安装 CUDA Toolkit
     # ============================================
     - name: Install CUDA Toolkit
-      env:
-        CUDA_VERSION: ${{ github.event.inputs.cuda_version || '13.2' }}
       run: |
-        # 添加NVIDIA源
-        wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.1-1_all.deb
+        CUDA_VER_MAJOR=$(echo $CUDA_VERSION | cut -d. -f1)
+        CUDA_VER_MINOR=$(echo $CUDA_VERSION | cut -d. -f2)
+        
+        echo "📦 安装 CUDA ${CUDA_VERSION}..."
+        
+        # CUDA 13.x 使用不同的包名
+        if [ "$CUDA_VER_MAJOR" -ge "13" ]; then
+          CUDA_PKG="cuda-toolkit-${CUDA_VER_MAJOR}-${CUDA_VER_MINOR}"
+        else
+          CUDA_PKG="cuda-toolkit-${CUDA_VERSION//./-}"
+        fi
+        
+        # 添加 NVIDIA 源
+        wget -q https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.1-1_all.deb
         sudo dpkg -i cuda-keyring_1.1-1_all.deb
         sudo apt-get update
-        # 安装CUDA Toolkit (仅编译器+库，不装驱动)
-        sudo apt-get install -y cuda-toolkit-${CUDA_VERSION//./-}
+        
+        # 安装 CUDA Toolkit
+        sudo apt-get install -y ${CUDA_PKG}
+        
+        # 验证安装
+        if [ -f "/usr/local/cuda/bin/nvcc" ]; then
+          /usr/local/cuda/bin/nvcc --version
+          echo "✅ CUDA ${CUDA_VERSION} 安装成功"
+        else
+          echo "❌ CUDA 安装失败"
+          exit 1
+        fi
+        
         # 设置环境变量
         echo "CUDA_PATH=/usr/local/cuda" >> $GITHUB_ENV
         echo "/usr/local/cuda/bin" >> $GITHUB_PATH
         echo "LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH" >> $GITHUB_ENV
+
     # ============================================
-    # 步骤3: 拉取代码
+    # 步骤3: 设置 GCC 版本
     # ============================================
-    - name: Clone source code
-      run: git clone https://github.com/ggml-org/llama.cpp.git $GITHUB_WORKSPACE/llama
+    - name: Setup GCC
+      run: |
+        # CUDA 13 要求 GCC 版本 ≤ 13，CUDA 12 要求 ≤ 11
+        if [ "$(echo $CUDA_VERSION | cut -d. -f1)" -ge "13" ]; then
+          sudo apt-get install -y gcc-12 g++-12
+          sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-12 100
+          sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-12 100
+        else
+          sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-11 100
+          sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-11 100
+        fi
+        
+        echo "GCC: $(gcc --version | head -1)"
+        echo "G++: $(g++ --version | head -1)"
+
     # ============================================
-    # 步骤4: 编译llama.cpp (带CUDA支持)
+    # 步骤4: 克隆 llama.cpp
+    # ============================================
+    - name: Clone llama.cpp
+      uses: actions/checkout@v4
+      with:
+        repository: ggml-org/llama.cpp
+        ref: master
+        path: llama
+
+    # ============================================
+    # 步骤5: 编译 llama.cpp (优化版)
     # ============================================
     - name: Build llama.cpp with CUDA
-      env:
-        CUDA_ARCHS: ${{ matrix.cuda_architectures }}
-        BUILD_TYPE: ${{ github.event.inputs.build_type || 'Release' }}
       run: |
+        export PATH=/usr/local/cuda/bin:$PATH
+        export LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH
+        
         cd llama
         
-        # CMake配置
-        cmake \
+        echo "🔨 编译配置:"
+        echo "  - CUDA 版本: $CUDA_VERSION"
+        echo "  - CUDA 架构: $CUDA_ARCHS"
+        echo "  - 构建类型: $BUILD_TYPE"
+        echo "  - GCC: $(gcc --version | head -1)"
+        echo ""
+        
+        # 创建构建目录
+        mkdir -p build && cd build
+        
+        # CMake 配置
+        cmake .. \
+          -G "Ninja" \
           -DGGML_CUDA=ON \
+          -DCMAKE_CUDA_COMPILER=/usr/local/cuda/bin/nvcc \
+          -DCUDA_TOOLKIT_ROOT_DIR=/usr/local/cuda \
           -DCMAKE_CUDA_ARCHITECTURES="$CUDA_ARCHS" \
           -DCMAKE_BUILD_TYPE="$BUILD_TYPE" \
           -DGGML_CUDA_F16=ON \
           -DGGML_CUDA_DMMV_X=32 \
           -DGGML_CUDA_MMV_Y=1 \
           -DBUILD_SHARED_LIBS=OFF \
+          -DCMAKE_C_COMPILER=$(which gcc) \
+          -DCMAKE_CXX_COMPILER=$(which g++) \
           -DCMAKE_EXE_LINKER_FLAGS="-static-libstdc++ -static-libgcc"
         
-        # 编译 (使用所有CPU核心)
-        make -j1
-        # make -j$(nproc)
+        # 编译 (使用 Ninja)
+        ninja -j$(nproc)
         
-        # 验证编译产物
+        # 验证产物
+        echo "✅ 编译完成"
         ls -la bin/
-    
+
     # ============================================
-    # 步骤5: 收集CUDA运行时依赖库
+    # 步骤6: 收集 CUDA 运行时库
     # ============================================
-    - name: Collect CUDA runtime libraries
+    - name: Collect runtime libraries
       run: |
-        cd llama/bin
+        cd llama/build/bin
         mkdir -p libs
         
-        # 复制CUDA运行时库
-        cp /usr/local/cuda/lib64/libcudart.so* libs/ 2>/dev/null || true
-        cp /usr/local/cuda/lib64/libcublas.so* libs/ 2>/dev/null || true
-        cp /usr/local/cuda/lib64/libcublasLt.so* libs/ 2>/dev/null || true
-        cp /usr/local/cuda/lib64/libcuda.so* libs/ 2>/dev/null || true
+        # 复制 CUDA 运行时库
+        echo "📦 收集 CUDA 运行时库..."
+        for lib in libcudart libcublas libcublasLt; do
+          find /usr/local/cuda/lib64 -name "${lib}.so*" -exec cp {} libs/ \; 2>/dev/null && echo "  ✅ ${lib}" || echo "  ⚠️  ${lib} 未找到"
+        done
         
         # 检查依赖
-        echo "=== 依赖库检查 ==="
-        ldd llama-server | grep "not found" || echo "✅ 所有依赖已满足"
-    
+        echo ""
+        echo "=== 依赖检查 ==="
+        for bin in llama-server llama-cli; do
+          if [ -f "$bin" ]; then
+            echo "📄 $bin:"
+            ldd $bin | grep "not found" || echo "  ✅ 所有依赖已满足"
+          fi
+        done
+
     # ============================================
-    # 步骤6: 打包完整产物（包含仓库中的脚本）
+    # 步骤7: 打包产物
     # ============================================
-    - name: Package artifacts with scripts
+    - name: Package artifacts
       run: |
-        cd llama
+        cd llama/build
         
-        # 创建包目录结构
+        # 创建包目录
         PACKAGE_DIR="llama-cuda-package"
-        mkdir -p $PACKAGE_DIR/bin
-        mkdir -p $PACKAGE_DIR/libs
-        mkdir -p $PACKAGE_DIR/logs
+        mkdir -p $PACKAGE_DIR/{bin,libs,logs}
         
         # 复制可执行文件
         echo "📁 复制可执行文件..."
         cp bin/llama-* $PACKAGE_DIR/bin/ 2>/dev/null || true
         chmod +x $PACKAGE_DIR/bin/*
         
-        # 复制CUDA库
-        echo "📁 复制CUDA库..."
+        # 复制 CUDA 库
+        echo "📁 复制 CUDA 库..."
         cp -r bin/libs/* $PACKAGE_DIR/libs/ 2>/dev/null || true
         
-        # ============================================
-        # 🔥 关键: 从仓库根目录复制启动脚本
-        # ============================================
-        echo "📁 从仓库复制启动脚本..."
+        # 复制启动脚本 (从仓库根目录)
+        echo "📁 复制启动脚本..."
+        SCRIPT_FILES=(
+          "../start_llama_server.sh"
+          "../stop_llama_server.sh" 
+          "../llama_server.conf"
+          "../health_check.sh"
+        )
         
-        # 检查并复制脚本文件
-        if [ -f "../start_llama_server.sh" ]; then
-            cp ../start_llama_server.sh $PACKAGE_DIR/
-            chmod +x $PACKAGE_DIR/start_llama_server.sh
-            echo "✅ 复制 start_llama_server.sh"
-        else
-            echo "⚠️  警告: start_llama_server.sh 不存在于仓库根目录"
-        fi
+        for script in "${SCRIPT_FILES[@]}"; do
+          if [ -f "$script" ]; then
+            cp "$script" $PACKAGE_DIR/
+            [[ "$script" == *.sh ]] && chmod +x $PACKAGE_DIR/$(basename "$script")
+            echo "  ✅ 复制 $(basename "$script")"
+          fi
+        done
         
-        if [ -f "../stop_llama_server.sh" ]; then
-            cp ../stop_llama_server.sh $PACKAGE_DIR/
-            chmod +x $PACKAGE_DIR/stop_llama_server.sh
-            echo "✅ 复制 stop_llama_server.sh"
-        else
-            echo "⚠️  警告: stop_llama_server.sh 不存在于仓库根目录"
-        fi
-        
-        if [ -f "../llama_server.conf" ]; then
-            cp ../llama_server.conf $PACKAGE_DIR/
-            echo "✅ 复制 llama_server.conf"
-        else
-            echo "⚠️  警告: llama_server.conf 不存在于仓库根目录"
-        fi
-        
-        # 复制额外脚本（如果有）
-        if [ -f "../health_check.sh" ]; then
-            cp ../health_check.sh $PACKAGE_DIR/
-            chmod +x $PACKAGE_DIR/health_check.sh
-            echo "✅ 复制 health_check.sh"
-        fi
-        
-        # 显示复制的文件
-        echo ""
-        echo "=== 包内容 ==="
-        ls -la $PACKAGE_DIR/
-        echo ""
-        ls -la $PACKAGE_DIR/bin/
-        echo ""
-        ls -la $PACKAGE_DIR/libs/ | head -10
-        
-        # ============================================
-        # 创建版本信息和README
-        # ============================================
+        # 创建版本信息
         cat > $PACKAGE_DIR/VERSION.txt << EOF
         ========================================
-        llama.cpp CUDA 包信息
+        llama.cpp CUDA 包
         ========================================
         构建日期: $(date -u +"%Y-%m-%d %H:%M:%S UTC")
-        Git提交: ${{ github.sha }}
-        分支: ${{ github.ref_name }}
-        CUDA版本: ${{ github.event.inputs.cuda_version || '12.6' }}
-        构建类型: ${{ github.event.inputs.build_type || 'Release' }}
-        CUDA架构: ${{ matrix.cuda_architectures }}
+        提交 SHA: ${{ github.sha }}
+        CUDA 版本: ${{ env.CUDA_VERSION }}
+        构建类型: ${{ env.BUILD_TYPE }}
+        CUDA 架构: ${{ env.CUDA_ARCHS }}
         ========================================
         EOF
         
-        cat > $PACKAGE_DIR/README.md << 'EOF'
-        # llama.cpp CUDA 包 (OpenAI兼容)
-        
-        ## 📦 包结构
-        ```
-        llama-cuda-package/
-        ├── bin/                    # 可执行文件
-        │   ├── llama-server        # API服务器（主程序）
-        │   ├── llama-cli           # 命令行推理
-        │   ├── llama-perplexity    # 困惑度测试
-        │   └── llama-bench         # 性能测试
-        ├── libs/                   # CUDA运行时库
-        │   ├── libcudart.so.*
-        │   ├── libcublas.so.*
-        │   └── libcublasLt.so.*
-        ├── start_llama_server.sh   # 启动脚本
-        ├── stop_llama_server.sh    # 停止脚本
-        ├── llama_server.conf       # 配置文件
-        ├── logs/                   # 日志目录
-        ├── VERSION.txt             # 版本信息
-        └── README.md               # 本文件
-        ```
-        
-        ## 🚀 快速启动
-        
-        ### 1. 解压
-        ```bash
-        tar -xzf llama-cuda-ubuntu2204-*.tar.gz
-        cd llama-cuda-package
-        ```
-        
-        ### 2. 配置
-        ```bash
-        vim llama_server.conf
-        # 必须修改: MODEL_PATH="/path/to/your/model.gguf"
-        ```
-        
-        ### 3. 启动
-        ```bash
-        ./start_llama_server.sh
-        ```
-        
-        ### 4. 测试
-        ```bash
-        # 健康检查
-        curl http://localhost:8080/health
-        
-        # OpenAI兼容接口
-        curl http://localhost:8080/v1/chat/completions \\
-          -H "Content-Type: application/json" \\
-          -d '{
-            "model": "llama",
-            "messages": [{"role": "user", "content": "Hello"}],
-            "max_tokens": 100
-          }'
-        ```
-        
-        ### 5. 停止
-        ```bash
-        ./stop_llama_server.sh
-        ```
-        
-        ## 🔧 配置说明
-        
-        编辑 `llama_server.conf` 调整参数：
-        - `MODEL_PATH`: 模型文件路径（必需）
-        - `PORT`: 服务端口（默认8080）
-        - `USE_GPU`: 启用GPU加速
-        - `GPU_LAYERS`: GPU卸载层数（-1=全部）
-        - `CONTEXT_SIZE`: 上下文长度
-        - `API_KEY`: API密钥（生产环境建议设置）
-        
-        ## 📊 监控
-        
-        ```bash
-        # 查看日志
-        tail -f logs/llama_server_*.log
-        
-        # 查看进程
-        ps aux | grep llama-server
-        ```
-        
-        ## ⚠️ 系统要求
-        
-        - NVIDIA GPU (Compute Capability ≥ 5.2)
-        - NVIDIA驱动版本 ≥ 535.xx
-        - Ubuntu 20.04/22.04 或兼容系统
-        - 内存 ≥ 8GB (推荐16GB+)
-        
-        ## 🔗 OpenAI兼容端点
-        
-        - `GET /v1/models` - 列出模型
-        - `POST /v1/chat/completions` - 聊天补全
-        - `POST /v1/completions` - 文本补全
-        - `POST /v1/embeddings` - 文本嵌入
-        - `GET /health` - 健康检查
-        - `GET /metrics` - Prometheus指标
-        
-        ## 🆘 故障排查
-        
-        ### CUDA库找不到
-        ```bash
-        export LD_LIBRARY_PATH=$PWD/libs:$LD_LIBRARY_PATH
-        ```
-        
-        ### 端口被占用
-        ```bash
-        # 修改 llama_server.conf 中的 PORT
-        PORT=8081
-        ```
-        
-        ### 模型加载失败
-        ```bash
-        # 检查模型文件路径和格式
-        file /path/to/model.gguf
-        ```
-        EOF
-        
-        # ============================================
         # 打包
-        # ============================================
-        PACKAGE_NAME="llama-cuda-ubuntu2204-${{ github.event.inputs.build_type || 'Release' }}-${{ github.sha }}"
+        PACKAGE_NAME="llama-cuda-ubuntu2204-${BUILD_TYPE}-${GITHUB_SHA::8}"
         tar -czf ${PACKAGE_NAME}.tar.gz $PACKAGE_DIR/
-        
-        # 生成校验和
         sha256sum ${PACKAGE_NAME}.tar.gz > checksum.txt
         
         echo ""
         echo "✅ 打包完成: ${PACKAGE_NAME}.tar.gz"
-        ls -lh ${PACKAGE_NAME}.tar.gz
-    
+        echo "📦 大小: $(du -h ${PACKAGE_NAME}.tar.gz | cut -f1)"
+        
+        # 保存包名供后续使用
+        echo "PACKAGE_NAME=${PACKAGE_NAME}" >> $GITHUB_ENV
+
     # ============================================
-    # 步骤7: 上传产物到GitHub Actions
+    # 步骤8: 上传产物
     # ============================================
     - name: Upload artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: llama-cuda-ubuntu2204-${{ github.event.inputs.build_type || 'Release' }}-${{ github.sha }}
+        name: llama-cuda-${{ env.BUILD_TYPE }}-${{ github.sha }}
         path: |
-          llama/llama-cuda-*.tar.gz
-          llama/checksum.txt
+          llama/build/llama-cuda-*.tar.gz
+          llama/build/checksum.txt
         retention-days: 30
         compression-level: 6
-    
+
     # ============================================
-    # 步骤8: (可选) 发布到GitHub Release
+    # 步骤9: 发布到 Release (Tag触发)
     # ============================================
     - name: Create Release
       if: startsWith(github.ref, 'refs/tags/')
       uses: softprops/action-gh-release@v1
       with:
         files: |
-          llama/llama-cuda-*.tar.gz
-          llama/checksum.txt
+          llama/build/llama-cuda-*.tar.gz
+          llama/build/checksum.txt
         draft: false
         prerelease: false
         generate_release_notes: true
         name: "llama.cpp CUDA ${{ github.ref_name }}"
         body: |
-          ## 🚀 llama.cpp CUDA 包
+          ## 🚀 llama.cpp CUDA 预编译包
           
-          ### 包含内容
-          - ✅ 预编译的llama-server (OpenAI兼容)
-          - ✅ CUDA 12.x 运行时库
-          - ✅ 启动/停止脚本
-          - ✅ 配置文件模板
+          ### 📦 包含内容
+          - ✅ llama-server (OpenAI 兼容 API)
+          - ✅ llama-cli (命令行推理)
+          - ✅ CUDA 运行时库 (libcudart, libcublas)
+          - ✅ 启动/停止/健康检查脚本
           
-          ### 使用方法
-          查看包内的 README.md
+          ### 🔧 系统要求
+          - Ubuntu 20.04/22.04
+          - NVIDIA 驱动 ≥ 535.xx
+          - NVIDIA GPU (Compute Capability ≥ 6.0)
           
-          ### 构建信息
-          - 构建日期: $(date -u +"%Y-%m-%d")
-          - CUDA架构: ${{ matrix.cuda_architectures }}
-          - 构建类型: ${{ github.event.inputs.build_type || 'Release' }}
+          ### 📝 使用方法
+          1. 解压: `tar -xzf llama-cuda-*.tar.gz`
+          2. 配置: 编辑 `llama_server.conf` 设置模型路径
+          3. 启动: `./start_llama_server.sh`
+          4. 测试: `curl http://localhost:8080/health`
+          
+          ### 📊 构建信息
+          - CUDA 版本: ${{ env.CUDA_VERSION }}
+          - CUDA 架构: ${{ env.CUDA_ARCHS }}
+          - 构建类型: ${{ env.BUILD_TYPE }}
+          - 构建日期: $(date -u +"%Y-%m-%d %H:%M:%S UTC")
+
+    # ============================================
+    # 步骤10: 错误处理
+    # ============================================
+    - name: Debug on failure
+      if: failure()
+      run: |
+        echo "=== 构建失败，打印诊断信息 ==="
+        echo ""
+        echo "--- 最后 50 行 CMake 日志 ---"
+        tail -n 50 llama/build/CMakeFiles/CMakeOutput.log 2>/dev/null || echo "无 CMakeOutput.log"
+        echo ""
+        echo "--- CMake 错误日志 ---"
+        tail -n 50 llama/build/CMakeFiles/CMakeError.log 2>/dev/null || echo "无 CMakeError.log"
+        echo ""
+        echo "--- 编译目录内容 ---"
+        ls -la llama/build/ 2>/dev/null || echo "build 目录不存在"
