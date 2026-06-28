@@ -35,7 +35,7 @@ on:
 jobs:
   build-linux-cuda:
     name: Build CUDA Package
-    runs-on: ubuntu-26.04
+    runs-on: ubuntu-24.04
     timeout-minutes: 180  # ✅ 超时保护
     
     env:
@@ -76,7 +76,7 @@ jobs:
         CUDA_PKG="cuda-toolkit-${CUDA_VERSION//./-}"
         
         # 添加 NVIDIA 源
-        wget -q https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2604/x86_64/cuda-keyring_1.1-1_all.deb
+        wget -q https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/x86_64/cuda-keyring_1.1-1_all.deb
         sudo dpkg -i cuda-keyring_1.1-1_all.deb
         sudo apt-get update
         
