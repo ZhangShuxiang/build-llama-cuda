@@ -6,7 +6,7 @@ on:
       cuda_version:
         description: 'CUDA Version'
         required: false
-        default: '12.6'  # ✅ 默认改为 12.6（CUDA 13.2 可能还不稳定）
+        default: '13.2'  # ✅ 默认改为 12.6（CUDA 13.2 可能还不稳定）
         type: choice
         options:
           - '12.4'
@@ -41,7 +41,7 @@ jobs:
     env:
       CUDA_ARCHS: ${{ github.event.inputs.cuda_arch || '80;86;89' }}
       BUILD_TYPE: ${{ github.event.inputs.build_type || 'Release' }}
-      CUDA_VERSION: ${{ github.event.inputs.cuda_version || '12.6' }}
+      CUDA_VERSION: ${{ github.event.inputs.cuda_version || '13.2' }}
     
     steps:
     # ============================================
@@ -60,8 +60,8 @@ jobs:
           libssl-dev \
           pkg-config \
           ninja-build \
-          gcc-11 \
-          g++-11 \
+          gcc-12 \
+          g++-12 \
           software-properties-common
 
     # ============================================
@@ -69,17 +69,7 @@ jobs:
     # ============================================
     - name: Install CUDA Toolkit
       run: |
-        CUDA_VER_MAJOR=$(echo $CUDA_VERSION | cut -d. -f1)
-        CUDA_VER_MINOR=$(echo $CUDA_VERSION | cut -d. -f2)
-        
-        echo "📦 安装 CUDA ${CUDA_VERSION}..."
-        
-        # CUDA 13.x 使用不同的包名
-        if [ "$CUDA_VER_MAJOR" -ge "13" ]; then
-          CUDA_PKG="cuda-toolkit-${CUDA_VER_MAJOR}-${CUDA_VER_MINOR}"
-        else
-          CUDA_PKG="cuda-toolkit-${CUDA_VERSION//./-}"
-        fi
+        CUDA_PKG="cuda-toolkit-${CUDA_VERSION//./-}"
         
         # 添加 NVIDIA 源
         wget -q https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2604/x86_64/cuda-keyring_1.1-1_all.deb
@@ -103,23 +93,16 @@ jobs:
         echo "/usr/local/cuda/bin" >> $GITHUB_PATH
         echo "LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH" >> $GITHUB_ENV
 
+        # 系统环境
+        export PATH=/usr/local/cuda/bin:$PATH
+        export LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH
     # ============================================
     # 步骤3: 设置 GCC 版本
     # ============================================
     - name: Setup GCC
       run: |
-        # CUDA 13 要求 GCC 版本 ≤ 13，CUDA 12 要求 ≤ 11
-        if [ "$(echo $CUDA_VERSION | cut -d. -f1)" -ge "13" ]; then
-          sudo apt-get install -y gcc-12 g++-12
-          sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-12 100
-          sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-12 100
-        else
-          sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-11 100
-          sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-11 100
-        fi
-        
-        echo "GCC: $(gcc --version | head -1)"
-        echo "G++: $(g++ --version | head -1)"
+       sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-12 100
+       sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-12 100
 
     # ============================================
     # 步骤4: 克隆 llama.cpp
@@ -136,9 +119,6 @@ jobs:
     # ============================================
     - name: Build llama.cpp with CUDA
       run: |
-        export PATH=/usr/local/cuda/bin:$PATH
-        export LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH
-        
         cd llama
         
         # 创建构建目录
