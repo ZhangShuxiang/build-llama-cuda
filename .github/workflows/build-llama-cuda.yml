@@ -35,7 +35,7 @@ on:
 jobs:
   build-linux-cuda:
     name: Build CUDA Package
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 180  # ✅ 超时保护
     
     env:
@@ -82,7 +82,7 @@ jobs:
         fi
         
         # 添加 NVIDIA 源
-        wget -q https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.1-1_all.deb
+        wget -q https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2604/x86_64/cuda-keyring_1.1-1_all.deb
         sudo dpkg -i cuda-keyring_1.1-1_all.deb
         sudo apt-get update
         
@@ -141,13 +141,6 @@ jobs:
         
         cd llama
         
-        echo "🔨 编译配置:"
-        echo "  - CUDA 版本: $CUDA_VERSION"
-        echo "  - CUDA 架构: $CUDA_ARCHS"
-        echo "  - 构建类型: $BUILD_TYPE"
-        echo "  - GCC: $(gcc --version | head -1)"
-        echo ""
-        
         # 创建构建目录
         mkdir -p build && cd build
         
@@ -162,7 +155,7 @@ jobs:
           -DGGML_CUDA_F16=ON \
           -DGGML_CUDA_DMMV_X=32 \
           -DGGML_CUDA_MMV_Y=1 \
-          -DBUILD_SHARED_LIBS=OFF \
+          -DBUILD_SHARED_LIBS=ON \
           -DCMAKE_C_COMPILER=$(which gcc) \
           -DCMAKE_CXX_COMPILER=$(which g++) \
           -DCMAKE_EXE_LINKER_FLAGS=""
@@ -189,14 +182,7 @@ jobs:
         done
         
         # 检查依赖
-        echo ""
-        echo "=== 依赖检查 ==="
-        for bin in llama-server llama-cli; do
-          if [ -f "$bin" ]; then
-            echo "📄 $bin:"
-            ldd $bin | grep "not found" || echo "  ✅ 所有依赖已满足"
-          fi
-        done
+        ls -la libs/
 
     # ============================================
     # 步骤7: 打包产物
