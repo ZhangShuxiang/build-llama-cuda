@@ -63,6 +63,10 @@ jobs:
           gcc-12 \
           g++-12 \
           software-properties-common
+        
+        # 设置GCC版本
+        sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-12 100
+        sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-12 100
 
     # ============================================
     # 步骤2: 安装 CUDA Toolkit
@@ -99,11 +103,6 @@ jobs:
     # ============================================
     # 步骤3: 设置 GCC 版本
     # ============================================
-    - name: Setup GCC
-      run: |
-       sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-12 100
-       sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-12 100
-
     # ============================================
     # 步骤4: 克隆 llama.cpp
     # ============================================
