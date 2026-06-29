@@ -6,11 +6,9 @@ on:
       cuda_version:
         description: 'CUDA Version'
         required: false
-        default: '13.2'  # ✅ 默认改为 12.6（CUDA 13.2 可能还不稳定）
+        default: '13.2'
         type: choice
         options:
-          - '12.4'
-          - '12.6'
           - '13.2'
       build_type:
         description: 'Build Type'
@@ -19,8 +17,6 @@ on:
         type: choice
         options:
           - 'Release'
-          - 'Debug'
-          - 'RelWithDebInfo'
       cuda_arch:
         description: 'CUDA Architectures'
         required: false
@@ -83,26 +79,19 @@ jobs:
         # 安装 CUDA Toolkit
         sudo apt-get install -y ${CUDA_PKG}
         
-        # 验证安装
-        if [ -f "/usr/local/cuda/bin/nvcc" ]; then
-          /usr/local/cuda/bin/nvcc --version
-          echo "✅ CUDA ${CUDA_VERSION} 安装成功"
-        else
-          echo "❌ CUDA 安装失败"
-          exit 1
-        fi
-        
         # 设置环境变量
         echo "CUDA_PATH=/usr/local/cuda" >> $GITHUB_ENV
         echo "/usr/local/cuda/bin" >> $GITHUB_PATH
         echo "LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH" >> $GITHUB_ENV
 
-        # 系统环境
+        # 设置系统环境
         export PATH=/usr/local/cuda/bin:$PATH
         export LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH
     # ============================================
-    # 步骤3: 设置 GCC 版本
+    # 步骤3: 克隆本仓库
     # ============================================
+    - name: Clone this build
+      uses: actions/checkout@v4
     # ============================================
     # 步骤4: 克隆 llama.cpp
     # ============================================
@@ -131,13 +120,7 @@ jobs:
           -DCUDA_TOOLKIT_ROOT_DIR=/usr/local/cuda \
           -DCMAKE_CUDA_ARCHITECTURES="$CUDA_ARCHS" \
           -DCMAKE_BUILD_TYPE="$BUILD_TYPE" \
-          -DGGML_CUDA_F16=ON \
-          -DGGML_CUDA_DMMV_X=32 \
-          -DGGML_CUDA_MMV_Y=1 \
-          -DBUILD_SHARED_LIBS=ON \
-          -DCMAKE_C_COMPILER=$(which gcc) \
-          -DCMAKE_CXX_COMPILER=$(which g++) \
-          -DCMAKE_EXE_LINKER_FLAGS=""
+          -DBUILD_SHARED_LIBS=OFF \
         
         # 编译 (使用 Ninja)
         ninja -j$(nproc)
@@ -145,97 +128,41 @@ jobs:
         # 验证产物
         echo "✅ 编译完成"
         ls -la bin/
-
-    # ============================================
-    # 步骤6: 收集 CUDA 运行时库
-    # ============================================
-    - name: Collect runtime libraries
-      run: |
-        cd llama/build/bin
-        mkdir -p libs
-        
-        # 复制 CUDA 运行时库
-        echo "📦 收集 CUDA 运行时库..."
-        for lib in libcudart libcublas libcublasLt; do
-          find /usr/local/cuda/lib64 -name "${lib}.so*" -exec cp {} libs/ \; 2>/dev/null && echo "  ✅ ${lib}" || echo "  ⚠️  ${lib} 未找到"
-        done
-        
-        # 检查依赖
-        ls -la libs/
-
     # ============================================
     # 步骤7: 打包产物
     # ============================================
-    # 步骤7: 精简打包
-    # ============================================
-    - name: Package artifacts (精简版)
+    - name: Package artifacts
       run: |
-        cd llama/build
-        
         PACKAGE_DIR="llama-cuda-package"
         mkdir -p $PACKAGE_DIR/{bin,libs,logs}
-        
         # ============================================
         # 1. 只复制必要的可执行文件
         # ============================================
         echo "📁 复制可执行文件..."
         for exe in llama-server llama-cli llama-perplexity llama-bench; do
-          if [ -f "bin/$exe" ]; then
+          if [ -f "llama/build/bin/$exe" ]; then
             # 去除调试符号（减小体积）
-            strip bin/$exe 2>/dev/null || true
-            cp bin/$exe $PACKAGE_DIR/bin/
+            strip llama/build/bin/$exe 2>/dev/null || true
+            cp llama/build/bin/$exe $PACKAGE_DIR/bin/
             echo "  ✅ $exe ($(du -h $PACKAGE_DIR/bin/$exe | cut -f1))"
           fi
         done
         chmod +x $PACKAGE_DIR/bin/*
-        
-        # ============================================
-        # 2. 只复制必要的 CUDA 库（去除调试符号）
-        # ============================================
-        echo "📁 复制 CUDA 库..."
-        cd bin/libs
-        
-        # 只复制 .so 文件（不包括 .a 静态库和 .debug 文件）
-        for lib in libcudart libcublas libcublasLt; do
-          # 找到最新的 .so 文件（跳过 .debug 和 .a）
-          SO_FILE=$(find . -maxdepth 1 -name "${lib}.so*" -type f -not -name "*.debug" | sort -V | tail -1)
-          if [ -n "$SO_FILE" ]; then
-            # 去除调试符号
-            strip --strip-unneeded "$SO_FILE" 2>/dev/null || true
-            cp "$SO_FILE" "../../$PACKAGE_DIR/libs/"
-            echo "  ✅ $(basename $SO_FILE) ($(du -h ../../$PACKAGE_DIR/libs/$(basename $SO_FILE) | cut -f1))"
-          fi
-        done
-        
-        cd ../..
-        
         # ============================================
         # 3. 复制启动脚本
         # ============================================
         echo "📁 复制启动脚本..."
         for script in start_llama_server.sh stop_llama_server.sh llama_server.conf health_check.sh; do
-          if [ -f "../../$script" ]; then
-            cp "../../$script" $PACKAGE_DIR/
+          if [ -f "./$script" ]; then
+            cp "./$script" $PACKAGE_DIR/
             [[ "$script" == *.sh ]] && chmod +x $PACKAGE_DIR/$script
             echo "  ✅ $script"
           fi
         done
-        
-        # ============================================
-        # 4. 创建版本信息
-        # ============================================
-        cat > $PACKAGE_DIR/VERSION.txt << EOF
-        Build Date: $(date -u +"%Y-%m-%d %H:%M:%S UTC")
-        Commit: ${{ github.sha }}
-        CUDA: ${{ env.CUDA_VERSION }}
-        Arch: ${{ env.CUDA_ARCHS }}
-        Type: ${{ env.BUILD_TYPE }}
-        EOF
-        
         # ============================================
         # 5. 打包并显示大小
         # ============================================
-        PACKAGE_NAME="llama-cuda-ubuntu2204-${BUILD_TYPE}-${GITHUB_SHA::8}"
+        PACKAGE_NAME="llama-cuda-ubuntu-$(date+%Y-%m-%d)"
         
         echo ""
         echo "=== 包内容大小 ==="
@@ -246,12 +173,6 @@ jobs:
         echo ""
         echo "✅ 打包完成: ${PACKAGE_NAME}.tar.gz"
         echo "📦 最终大小: $(du -h ${PACKAGE_NAME}.tar.gz | cut -f1)"
-        
-        sha256sum ${PACKAGE_NAME}.tar.gz > checksum.txt
-        
-        # 保存包名供后续使用
-        echo "PACKAGE_NAME=${PACKAGE_NAME}" >> $GITHUB_ENV
-
     # ============================================
     # 步骤8: 上传产物
     # ============================================
@@ -259,12 +180,9 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: llama-cuda-${{ env.BUILD_TYPE }}-${{ github.sha }}
-        path: |
-          llama/build/llama-cuda-*.tar.gz
-          llama/build/checksum.txt
+        path: llama-cuda-*.tar.gz
         retention-days: 30
         compression-level: 6
-
     # ============================================
     # 步骤9: 发布到 Release
     # ============================================
@@ -272,9 +190,7 @@ jobs:
       if: startsWith(github.ref, 'refs/tags/')
       uses: softprops/action-gh-release@v1
       with:
-        files: |
-          llama/build/llama-cuda-*.tar.gz
-          llama/build/checksum.txt
+        files: llama-cuda-*.tar.gz
         draft: false
         prerelease: false
         generate_release_notes: true
@@ -304,20 +220,3 @@ jobs:
           - CUDA 架构: ${{ env.CUDA_ARCHS }}
           - 构建类型: ${{ env.BUILD_TYPE }}
           - 构建日期: $(date -u +"%Y-%m-%d %H:%M:%S UTC")
-
-    # ============================================
-    # 步骤10: 错误处理
-    # ============================================
-    - name: Debug on failure
-      if: failure()
-      run: |
-        echo "=== 构建失败，打印诊断信息 ==="
-        echo ""
-        echo "--- 最后 50 行 CMake 日志 ---"
-        tail -n 50 llama/build/CMakeFiles/CMakeOutput.log 2>/dev/null || echo "无 CMakeOutput.log"
-        echo ""
-        echo "--- CMake 错误日志 ---"
-        tail -n 50 llama/build/CMakeFiles/CMakeError.log 2>/dev/null || echo "无 CMakeError.log"
-        echo ""
-        echo "--- 编译目录内容 ---"
-        ls -la llama/build/ 2>/dev/null || echo "build 目录不存在"
