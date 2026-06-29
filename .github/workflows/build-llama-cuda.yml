@@ -32,7 +32,7 @@ jobs:
   build-linux-cuda:
     name: Build CUDA Package
     runs-on: ubuntu-24.04
-    timeout-minutes: 180  # ✅ 超时保护
+    timeout-minutes: 90  # ✅ 超时保护
     
     env:
       CUDA_ARCHS: ${{ github.event.inputs.cuda_arch || '80;86;89' }}
@@ -45,8 +45,8 @@ jobs:
     # ============================================
     - name: Install system dependencies
       run: |
-        sudo apt-get update
-        sudo apt-get install -y \
+        sudo -E apt -qqy update
+        sudo -E apt -qqy install \
           build-essential \
           cmake \
           git \
@@ -63,7 +63,6 @@ jobs:
         # 设置GCC版本
         sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-12 100
         sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-12 100
-
     # ============================================
     # 步骤2: 安装 CUDA Toolkit
     # ============================================
@@ -74,10 +73,10 @@ jobs:
         # 添加 NVIDIA 源
         wget -q https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/x86_64/cuda-keyring_1.1-1_all.deb
         sudo dpkg -i cuda-keyring_1.1-1_all.deb
-        sudo apt-get update
+        sudo -E apt -qqy update
         
         # 安装 CUDA Toolkit
-        sudo apt-get install -y ${CUDA_PKG}
+        sudo -E apt -qqy install ${CUDA_PKG}
         
         # 设置环境变量
         echo "CUDA_PATH=/usr/local/cuda" >> $GITHUB_ENV
@@ -101,17 +100,14 @@ jobs:
         repository: ggml-org/llama.cpp
         ref: master
         path: llama
-
     # ============================================
     # 步骤5: 编译 llama.cpp (优化版)
     # ============================================
     - name: Build llama.cpp with CUDA
       run: |
         cd llama
-        
         # 创建构建目录
         mkdir -p build && cd build
-        
         # CMake 配置
         cmake .. \
           -G "Ninja" \
@@ -121,10 +117,8 @@ jobs:
           -DCMAKE_CUDA_ARCHITECTURES="$CUDA_ARCHS" \
           -DCMAKE_BUILD_TYPE="$BUILD_TYPE" \
           -DBUILD_SHARED_LIBS=OFF \
-        
         # 编译 (使用 Ninja)
         ninja -j$(nproc)
-        
         # 验证产物
         echo "✅ 编译完成"
         ls -la bin/
@@ -155,14 +149,14 @@ jobs:
         for script in start_llama_server.sh stop_llama_server.sh llama_server.conf health_check.sh; do
           if [ -f "./$script" ]; then
             cp "./$script" $PACKAGE_DIR/
-            [[ "$script" == *.sh ]] && chmod +x $PACKAGE_DIR/$script
-            echo "  ✅ $script"
+            [[ "./$script" == *.sh ]] && chmod +x $PACKAGE_DIR/$script
+            echo "  ✅ $script ($(du -h $PACKAGE_DIR/$script | cut -f1))"
           fi
         done
         # ============================================
         # 5. 打包并显示大小
         # ============================================
-        PACKAGE_NAME="llama-cuda-ubuntu-$(date+%Y-%m-%d)"
+        PACKAGE_NAME="llama-cuda-ubuntu-$(date +%Y-%m-%d)"
         
         echo ""
         echo "=== 包内容大小 ==="
@@ -203,11 +197,6 @@ jobs:
           - ✅ llama-cli (命令行推理)
           - ✅ CUDA 运行时库 (libcudart, libcublas)
           - ✅ 启动/停止/健康检查脚本
-          
-          ### 🔧 系统要求
-          - Ubuntu 20.04/22.04
-          - NVIDIA 驱动 ≥ 535.xx
-          - NVIDIA GPU (Compute Capability ≥ 6.0)
           
           ### 📝 使用方法
           1. 解压: `tar -xzf llama-cuda-*.tar.gz`
