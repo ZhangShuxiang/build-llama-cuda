@@ -175,15 +175,13 @@ jobs:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
         files: llama-cuda-*.tar.gz
-        tag_name: "llama.cpp CUDA ${{ github.ref_name }}"
+        tag_name: "llama.cpp-CUDA-${{ github.ref_name }}"
         body: |
           ## 🚀 llama.cpp CUDA 预编译包
-          
           ### 📦 包含内容
           - ✅ llama-server (OpenAI 兼容 API)
           - ✅ llama-cli (命令行推理)
           - ✅ 启动/停止/健康检查脚本
-          
           ### 📝 使用方法
           1. 解压: `tar -xzf llama-cuda-*.tar.gz`
           2. 配置: 编辑 `llama_server.conf` 设置模型路径
