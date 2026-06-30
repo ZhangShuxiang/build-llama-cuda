@@ -170,14 +170,12 @@ jobs:
     # 步骤9: 发布到 Release
     # ============================================
     - name: Create Release
-      if: startsWith(github.ref, 'refs/tags/')
       uses: softprops/action-gh-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
         files: llama-cuda-*.tar.gz
-        draft: false
-        prerelease: false
-        generate_release_notes: true
-        name: "llama.cpp CUDA ${{ github.ref_name }}"
+        tag_name: "llama.cpp CUDA ${{ github.ref_name }}"
         body: |
           ## 🚀 llama.cpp CUDA 预编译包
           
