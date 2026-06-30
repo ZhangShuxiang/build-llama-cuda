@@ -10,13 +10,6 @@ on:
         type: choice
         options:
           - '13.2'
-      build_type:
-        description: 'Build Type'
-        required: false
-        default: 'Release'
-        type: choice
-        options:
-          - 'Release'
       cuda_arch:
         description: 'CUDA Architectures'
         required: false
@@ -36,7 +29,6 @@ jobs:
     
     env:
       CUDA_ARCHS: ${{ github.event.inputs.cuda_arch || '80;86;89' }}
-      BUILD_TYPE: ${{ github.event.inputs.build_type || 'Release' }}
       CUDA_VERSION: ${{ github.event.inputs.cuda_version || '13.2' }}
     
     steps:
@@ -112,10 +104,7 @@ jobs:
         cmake .. \
           -G "Ninja" \
           -DGGML_CUDA=ON \
-          -DCMAKE_CUDA_COMPILER=/usr/local/cuda/bin/nvcc \
-          -DCUDA_TOOLKIT_ROOT_DIR=/usr/local/cuda \
           -DCMAKE_CUDA_ARCHITECTURES="$CUDA_ARCHS" \
-          -DCMAKE_BUILD_TYPE="$BUILD_TYPE" \
           -DBUILD_SHARED_LIBS=OFF \
         # 编译 (使用 Ninja)
         ninja -j$(nproc)
@@ -128,7 +117,7 @@ jobs:
     - name: Package artifacts
       run: |
         PACKAGE_DIR="llama-cuda-package"
-        mkdir -p $PACKAGE_DIR/{bin,libs,logs}
+        mkdir -p $PACKAGE_DIR/{bin,logs}
         # ============================================
         # 1. 只复制必要的可执行文件
         # ============================================
@@ -173,7 +162,7 @@ jobs:
     - name: Upload artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: llama-cuda-${{ env.BUILD_TYPE }}-${{ github.sha }}
+        name: llama-cuda-Release-${{ github.sha }}
         path: llama-cuda-*.tar.gz
         retention-days: 30
         compression-level: 6
@@ -195,7 +184,6 @@ jobs:
           ### 📦 包含内容
           - ✅ llama-server (OpenAI 兼容 API)
           - ✅ llama-cli (命令行推理)
-          - ✅ CUDA 运行时库 (libcudart, libcublas)
           - ✅ 启动/停止/健康检查脚本
           
           ### 📝 使用方法
@@ -203,9 +191,3 @@ jobs:
           2. 配置: 编辑 `llama_server.conf` 设置模型路径
           3. 启动: `./start_llama_server.sh`
           4. 测试: `curl http://localhost:8080/health`
-          
-          ### 📊 构建信息
-          - CUDA 版本: ${{ env.CUDA_VERSION }}
-          - CUDA 架构: ${{ env.CUDA_ARCHS }}
-          - 构建类型: ${{ env.BUILD_TYPE }}
-          - 构建日期: $(date -u +"%Y-%m-%d %H:%M:%S UTC")
