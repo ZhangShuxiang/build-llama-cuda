@@ -5,7 +5,7 @@
 ###############################################################################
 
 # ==================== 基础配置 ====================
-MODEL_PATH="${MODEL_PATH:-/path/to/your/model.gguf}"          # 模型文件路径
+MODEL_PATH="${MODEL_PATH:-./Qwen3.5-9B-UD-Q4_K_XL.gguf}"       # 模型文件路径
 HOST="${HOST:-0.0.0.0}"                                        # 监听地址 (0.0.0.0允许外部访问)
 PORT="${PORT:-8080}"                                           # 监听端口
 THREADS="${THREADS:-$(nproc)}"                                 # CPU线程数 (GPU模式可设小一些)
@@ -13,8 +13,8 @@ THREADS="${THREADS:-$(nproc)}"                                 # CPU线程数 (G
 # ==================== GPU配置 ====================
 USE_GPU="${USE_GPU:-true}"                                     # 是否启用GPU
 GPU_LAYERS="${GPU_LAYERS:-99}"                                 # 卸载到GPU的层数 (-1=全部, 99=全部)
-GPU_SPLIT_MODE="${GPU_SPLIT_MODE:-layer}"                     # 多GPU分摊模式: layer/row/none
-MAIN_GPU="${MAIN_GPU:-0}"                                      # 主GPU设备ID
+GPU_SPLIT_MODE="${GPU_SPLIT_MODE:-}"                           # 多GPU分摊模式: layer/row/none
+MAIN_GPU="${MAIN_GPU:-}"                                       # 主GPU设备ID
 
 # ==================== 性能优化 ====================
 BATCH_SIZE="${BATCH_SIZE:-512}"                                # 批处理大小 (显存充足可提高)
@@ -29,9 +29,9 @@ NO_MMAP="${NO_MMAP:-false}"                                    # 禁用mmap (文
 
 # ==================== OpenAI兼容参数 ====================
 OPENAI_COMPAT="${OPENAI_COMPAT:-true}"                         # 启用OpenAI兼容模式
-API_KEY="${API_KEY:-}"                                         # API密钥 (留空则不校验)
+API_KEY="${API_KEY:-12345678}"                                 # API密钥 (留空则不校验)
 CORS="${CORS:-true}"                                           # 启用CORS跨域
-CORS_ALLOWED_ORIGINS="${CORS_ALLOWED_ORIGINS:-*}"             # 允许的跨域源
+CORS_ALLOWED_ORIGINS="${CORS_ALLOWED_ORIGINS:-*}"              # 允许的跨域源
 
 # ==================== 日志与调试 ====================
 VERBOSE="${VERBOSE:-1}"                                        # 日志级别: 0=静默, 1=普通, 2=详细
@@ -48,13 +48,6 @@ CACHE_CAPACITY="${CACHE_CAPACITY:-}"                           # 缓存容量 (M
 # ==================== 环境检测 ====================
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SERVER_BIN="${SCRIPT_DIR}/bin/llama-server"
-LIBS_DIR="${SCRIPT_DIR}/libs"
-
-# 设置库路径 (如果存在本地CUDA库)
-if [ -d "$LIBS_DIR" ]; then
-    export LD_LIBRARY_PATH="$LIBS_DIR:$LD_LIBRARY_PATH"
-    echo "✅ 加载本地CUDA库: $LIBS_DIR"
-fi
 
 # 检查服务器二进制文件
 if [ ! -f "$SERVER_BIN" ]; then
