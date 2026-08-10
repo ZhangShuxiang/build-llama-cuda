@@ -21,6 +21,9 @@ on:
           - '80;86;89'              # Ampere+ (RTX 30/40)
           - '89;90'                 # Ada Lovelace + Hopper
 
+permissions:
+  contents: write
+
 jobs:
   build-linux-cuda:
     name: Build CUDA Package
@@ -33,33 +36,47 @@ jobs:
     
     steps:
     # ============================================
-    # 步骤1: 安装系统依赖
+    # 步骤1: Install CUDA
+    # ============================================
+    - name: Install CUDA
+      uses: Jimver/cuda-toolkit@v0.2.36
+      with:
+        cuda: ${{ env.CUDA_VERSION }}
+        method: network
+        sub-packages: |
+          cuda-compiler
+          cuda-libraries
+          cuda-libraries-dev
+    # ============================================
+    # 步骤2: 安装系统依赖
     # ============================================
     - name: Install system dependencies
       run: |
-        CUDA_PKG="cuda-toolkit-${CUDA_VERSION//./-}"
-        # 添加NVIDIA源
-        wget -q https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/x86_64/cuda-keyring_1.1-1_all.deb
-        sudo dpkg -i cuda-keyring_1.1-1_all.deb
         # 安装依赖包
         sudo -E apt -qqy update
         sudo -E apt -qqy install \
           build-essential \
           cmake \
           git \
-          wget \
-          curl \
           libcurl4-openssl-dev \
           libssl-dev \
           pkg-config \
           ninja-build \
           gcc-12 \
           g++-12 \
-          software-properties-common \
-          ${CUDA_PKG}
         # 设置GCC版本
         sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-12 100
         sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-12 100
+
+        echo "/usr/local/cuda/bin" >> $GITHUB_PATH
+        echo "CUDA_PATH=/usr/local/cuda" >> $GITHUB_ENV
+    # ============================================
+    # 步骤3: Check CUDA
+    # ============================================
+    - name: Check CUDA
+      run: |
+        nvcc --version
+        echo "CUDA_PATH=$CUDA_PATH"
     # ============================================
     # 步骤4: 克隆 llama.cpp
     # ============================================
@@ -74,8 +91,6 @@ jobs:
     # ============================================
     - name: Build llama.cpp with CUDA
       run: |
-        export PATH=/usr/local/cuda/bin:$PATH
-        export LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH
         cd llama
         # CMake 配置
         cmake -B build \
@@ -105,8 +120,7 @@ jobs:
     # 步骤8: 打包产物
     # ============================================
     - name: Package artifacts
-      run: |
-        tar -czf linux-llama-cuda.tar.gz -C llama/build bin
+      run: tar -czf linux-llama-cuda.tar.gz -C llama/build bin
     # ============================================
     # 步骤9: 发布到 Release
     # ============================================
