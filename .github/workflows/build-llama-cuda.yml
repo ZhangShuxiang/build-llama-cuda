@@ -42,11 +42,7 @@ jobs:
       uses: Jimver/cuda-toolkit@v0.2.36
       with:
         cuda: ${{ env.CUDA_VERSION }}
-        method: network
-        sub-packages: |
-          cuda-compiler
-          cuda-libraries
-          cuda-libraries-dev
+        method: local
     # ============================================
     # 步骤2: 安装系统依赖
     # ============================================
