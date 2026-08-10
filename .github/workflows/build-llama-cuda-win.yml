@@ -1,0 +1,154 @@
+name: Build llama.cpp for Windows (CUDA + RPC)
+
+on:
+  workflow_dispatch:
+    inputs:
+      cuda_version:
+        description: 'CUDA Version'
+        required: false
+        default: '12.6'
+        type: choice
+        options:
+          - '12.4'
+          - '12.6'
+          - '12.8'
+      cuda_arch:
+        description: 'CUDA Architectures'
+        required: false
+        default: '80;86;89'
+        type: choice
+        options:
+          - '60;61;70;75;80;86;89'
+          - '70;75;80;86;89'
+          - '80;86;89'
+          - '89;90'
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows-cuda:
+    name: Build Windows CUDA Package
+    runs-on: windows-latest
+    timeout-minutes: 90
+
+    env:
+      CUDA_ARCHS: ${{ github.event.inputs.cuda_arch || '80;86;89' }}
+      CUDA_VERSION: ${{ github.event.inputs.cuda_version || '12.6' }}
+
+    steps:
+    # ============================================
+    # 1. 安装 CUDA Toolkit（Windows 版）
+    # ============================================
+    - name: Install CUDA Toolkit
+      uses: Jimver/cuda-toolkit@v0.2.21
+      with:
+        cuda: ${{ env.CUDA_VERSION }}
+        method: network
+        sub-packages: |
+          cuda-compiler
+          cuda-libraries
+          cuda-libraries-dev
+
+    - name: Verify CUDA installation
+      shell: bash
+      run: |
+        nvcc --version
+        echo "CUDA_PATH=$CUDA_PATH"
+
+    # ============================================
+    # 2. 安装 MSVC 编译器和构建工具
+    # ============================================
+    - name: Setup MSVC
+      uses: ilammy/msvc-dev-cmd@v1
+      with:
+        arch: x64
+
+    - name: Verify MSVC
+      shell: bash
+      run: |
+        cl.exe 2>&1 | head -2 || true
+        echo "CC=$CC"
+        echo "CXX=$CXX"
+
+    # ============================================
+    # 3. 克隆 llama.cpp
+    # ============================================
+    - name: Clone llama.cpp
+      uses: actions/checkout@v4
+      with:
+        repository: ggml-org/llama.cpp
+        ref: master
+        path: llama
+
+    # ============================================
+    # 4. 编译 llama.cpp
+    # ============================================
+    - name: Build llama.cpp
+      shell: bash
+      run: |
+        cd llama
+        cmake -B build \
+          -G "Ninja" \
+          -DGGML_RPC=ON \
+          -DGGML_CUDA=ON \
+          -DGGML_CUDA_FORCE_MMQ=OFF \
+          -DGGML_CUDA_FA_ALL_QUANTS=ON \
+          -DGGML_CUDA_F16=ON \
+          -DGGML_CUDA_GRAPHS=ON \
+          -DCMAKE_CUDA_ARCHITECTURES="$CUDA_ARCHS" \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DBUILD_SHARED_LIBS=OFF
+        cmake --build build -j$NUMBER_OF_PROCESSORS
+        ls -la build/bin/
+
+    # ============================================
+    # 5. 收集运行时 DLL
+    # ============================================
+    - name: Collect runtime DLLs
+      shell: bash
+      run: |
+        mkdir -p llama/build/bin/dist
+        cp llama/build/bin/*.exe llama/build/bin/dist/
+        cp llama/build/bin/*.dll llama/build/bin/dist/ 2>/dev/null || true
+        
+        # 复制 CUDA 运行时 DLL（版本号根据实际情况可能微调）
+        CUDA_BIN="$CUDA_PATH/bin"
+        cp "$CUDA_BIN/cudart64_"*.dll llama/build/bin/dist/ 2>/dev/null || true
+        cp "$CUDA_BIN/cublas64_"*.dll llama/build/bin/dist/ 2>/dev/null || true
+        cp "$CUDA_BIN/cublasLt64_"*.dll llama/build/bin/dist/ 2>/dev/null || true
+        cp "$CUDA_BIN/cufft64_"*.dll llama/build/bin/dist/ 2>/dev/null || true
+        cp "$CUDA_BIN/curand64_"*.dll llama/build/bin/dist/ 2>/dev/null || true
+        cp "$CUDA_BIN/cusolver64_"*.dll llama/build/bin/dist/ 2>/dev/null || true
+        cp "$CUDA_BIN/cusparse64_"*.dll llama/build/bin/dist/ 2>/dev/null || true
+        cp "$CUDA_BIN/nvJitLink64_"*.dll llama/build/bin/dist/ 2>/dev/null || true
+        
+        ls -la llama/build/bin/dist/
+
+    # ============================================
+    # 6. 打包
+    # ============================================
+    - name: Package artifacts
+      shell: bash
+      run: |
+        cd llama/build/bin/dist
+        7z a -tzip ../../../../windows-llama-cuda.zip *
+        cd ../../../..
+
+    # ============================================
+    # 7. 上传临时产物
+    # ============================================
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: windows-llama-cuda-${{ github.sha }}
+        path: windows-llama-cuda.zip
+
+    # ============================================
+    # 8. 发布到 Release
+    # ============================================
+    - name: Create Release
+      uses: softprops/action-gh-release@v2
+      with:
+        files: windows-llama-cuda.zip
+        tag_name: windows-llama-cuda-${{ github.sha }}
