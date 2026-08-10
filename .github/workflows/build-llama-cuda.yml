@@ -37,6 +37,11 @@ jobs:
     # ============================================
     - name: Install system dependencies
       run: |
+        CUDA_PKG="cuda-toolkit-${CUDA_VERSION//./-}"
+        # 添加NVIDIA源
+        wget -q https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/x86_64/cuda-keyring_1.1-1_all.deb
+        sudo dpkg -i cuda-keyring_1.1-1_all.deb
+        # 安装依赖包
         sudo -E apt -qqy update
         sudo -E apt -qqy install \
           build-essential \
@@ -50,44 +55,16 @@ jobs:
           ninja-build \
           gcc-12 \
           g++-12 \
-          software-properties-common
-        
+          software-properties-common \
+          ${CUDA_PKG}
         # 设置GCC版本
         sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-12 100
         sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-12 100
     # ============================================
-    # 步骤2: 安装 CUDA Toolkit
-    # ============================================
-    - name: Install CUDA Toolkit
-      run: |
-        CUDA_PKG="cuda-toolkit-${CUDA_VERSION//./-}"
-        
-        # 添加 NVIDIA 源
-        wget -q https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/x86_64/cuda-keyring_1.1-1_all.deb
-        sudo dpkg -i cuda-keyring_1.1-1_all.deb
-        sudo -E apt -qqy update
-        
-        # 安装 CUDA Toolkit
-        sudo -E apt -qqy install ${CUDA_PKG}
-        
-        # 设置环境变量
-        echo "CUDA_PATH=/usr/local/cuda" >> $GITHUB_ENV
-        echo "/usr/local/cuda/bin" >> $GITHUB_PATH
-        echo "LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH" >> $GITHUB_ENV
-
-        # 设置系统环境
-        export PATH=/usr/local/cuda/bin:$PATH
-        export LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH
-    # ============================================
-    # 步骤3: 克隆本仓库
-    # ============================================
-    - name: Clone this build
-      uses: actions/checkout@v4
-    # ============================================
     # 步骤4: 克隆 llama.cpp
     # ============================================
     - name: Clone llama.cpp
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5
       with:
         repository: ggml-org/llama.cpp
         ref: master
@@ -98,92 +75,43 @@ jobs:
     - name: Build llama.cpp with CUDA
       run: |
         cd llama
-        # 创建构建目录
-        mkdir -p build && cd build
         # CMake 配置
-        cmake .. \
+        cmake -B build \
           -G "Ninja" \
+          -DGGML_RPC=ON \
           -DGGML_CUDA=ON \
+          -DGGML_CUDA_FORCE_MMQ=OFF \
+          -DGGML_CUDA_FA_ALL_QUANTS=ON \
+          -DGGML_CUDA_F16=ON \
+          -DGGML_CUDA_GRAPHS=ON \
           -DCMAKE_CUDA_ARCHITECTURES="$CUDA_ARCHS" \
+          -DCMAKE_BUILD_TYPE=Release \
           -DBUILD_SHARED_LIBS=OFF \
         # 编译 (使用 Ninja)
-        ninja -j$(nproc)
-        # 验证产物
-        echo "✅ 编译完成"
-        ls -la bin/
+        ninja -C build -j$(nproc)
+        # 列出文件
+        ls -la build/bin/
     # ============================================
-    # 步骤7: 打包产物
+    # 步骤7: 上传产物
+    # ============================================
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v6
+      with:
+        name: linux-llama-cuda-${{ github.sha }}
+        path: llama/build/bin
+    # ============================================
+    # 步骤8: 打包产物
     # ============================================
     - name: Package artifacts
       run: |
-        PACKAGE_DIR="llama-cuda-package"
-        mkdir -p $PACKAGE_DIR/{bin,logs}
-        # ============================================
-        # 1. 只复制必要的可执行文件
-        # ============================================
-        echo "📁 复制可执行文件..."
-        for exe in llama-server llama-cli llama-perplexity llama-bench; do
-          if [ -f "llama/build/bin/$exe" ]; then
-            # 去除调试符号（减小体积）
-            strip llama/build/bin/$exe 2>/dev/null || true
-            cp llama/build/bin/$exe $PACKAGE_DIR/bin/
-            echo "  ✅ $exe ($(du -h $PACKAGE_DIR/bin/$exe | cut -f1))"
-          fi
-        done
-        chmod +x $PACKAGE_DIR/bin/*
-        # ============================================
-        # 3. 复制启动脚本
-        # ============================================
-        echo "📁 复制启动脚本..."
-        for script in start_llama_server.sh stop_llama_server.sh llama_server.conf health_check.sh; do
-          if [ -f "./$script" ]; then
-            cp "./$script" $PACKAGE_DIR/
-            [[ "./$script" == *.sh ]] && chmod +x $PACKAGE_DIR/$script
-            echo "  ✅ $script ($(du -h $PACKAGE_DIR/$script | cut -f1))"
-          fi
-        done
-        # ============================================
-        # 5. 打包并显示大小
-        # ============================================
-        PACKAGE_NAME="llama-cuda-ubuntu-$(date +%Y-%m-%d)"
-        
-        echo ""
-        echo "=== 包内容大小 ==="
-        du -sh $PACKAGE_DIR/*
-        
-        tar -czf ${PACKAGE_NAME}.tar.gz $PACKAGE_DIR/
-        
-        echo ""
-        echo "✅ 打包完成: ${PACKAGE_NAME}.tar.gz"
-        echo "📦 最终大小: $(du -h ${PACKAGE_NAME}.tar.gz | cut -f1)"
-    # ============================================
-    # 步骤8: 上传产物
-    # ============================================
-    - name: Upload artifacts
-      uses: actions/upload-artifact@v4
-      with:
-        name: llama-cuda-Release-${{ github.sha }}
-        path: llama-cuda-*.tar.gz
-        retention-days: 30
-        compression-level: 6
+        tar -czf linux-llama-cuda.tar.gz -C llama/build bin
     # ============================================
     # 步骤9: 发布到 Release
     # ============================================
     - name: Create Release
-      uses: softprops/action-gh-release@v1
+      uses: softprops/action-gh-release@v3
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
-        files: llama-cuda-*.tar.gz
-        tag_name: "llama.cpp-CUDA-${{ github.ref_name }}"
-        body: |
-          ## 🚀 llama.cpp CUDA 预编译包
-          ### 📦 包含内容
-          - ✅ llama-server (OpenAI 兼容 API)
-          - ✅ llama-cli (命令行推理)
-          - ✅ 启动/停止/健康检查脚本
-          ### 📝 使用方法
-          1. 解压: `tar -xzf llama-cuda-*.tar.gz`
-          2. 配置: 编辑 `llama_server.conf` 设置模型路径
-          3. 启动: `./start_llama_server.sh`
-          4. 测试: `curl http://localhost:8080/health`
+        files: linux-llama-cuda.tar.gz
+        tag_name: linux-llama-cuda-${{ github.sha }}
