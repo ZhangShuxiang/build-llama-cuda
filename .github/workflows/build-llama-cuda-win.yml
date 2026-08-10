@@ -30,7 +30,7 @@ jobs:
   build-windows-cuda:
     name: Build CUDA Package (Windows)
     runs-on: windows-2022
-    timeout-minutes: 120
+    timeout-minutes: 150
 
     env:
       CUDA_ARCHS: ${{ github.event.inputs.cuda_arch || '80;86;89' }}
@@ -38,7 +38,11 @@ jobs:
 
     steps:
     # ============================================
-    # 步骤1: 安装 CUDA Toolkit
+    # 步骤1: 安装 CUDA Toolkit (完整安装)
+    # ============================================
+    # CUDA 13.x 在 Windows 上使用 sub-packages 筛选时，crt/ 目录下的
+    # 头文件可能不会被正确安装，导致 "crt/host_config.h: No such file"
+    # 因此不使用 sub-packages，让 action 完整安装 CUDA Toolkit
     # ============================================
     - name: Install CUDA Toolkit
       uses: Jimver/cuda-toolkit@v0.2.36
@@ -46,8 +50,7 @@ jobs:
       with:
         cuda: ${{ env.CUDA_VERSION }}
         method: 'local'
-        # Windows 下 local 方法支持子包筛选，如需完整安装可删除下面这行
-        sub-packages: '["nvcc", "cudart", "cublas", "cublas_dev", "visual_studio_integration"]'
+        # 不指定 sub-packages，安装完整 CUDA Toolkit
 
     - name: Verify CUDA installation
       shell: pwsh
@@ -56,6 +59,12 @@ jobs:
         nvcc --version
         Write-Host "CUDA_PATH: $env:CUDA_PATH"
         if (-not $env:CUDA_PATH) { throw "CUDA_PATH not set" }
+        # 验证 crt/host_config.h 是否存在
+        $hostConfig = Join-Path $env:CUDA_PATH "include\crt\host_config.h"
+        if (-not (Test-Path $hostConfig)) { 
+          throw "Missing $hostConfig - CUDA installation may be incomplete" 
+        }
+        Write-Host "Found: $hostConfig"
 
     # ============================================
     # 步骤2: 克隆 llama.cpp
@@ -76,7 +85,7 @@ jobs:
         $ErrorActionPreference = 'Stop'
         cd llama
 
-        # 使用 Visual Studio 2022 生成器 (windows-latest 已预装)
+        # 使用 Visual Studio 2022 生成器
         cmake -B build `
           -G "Visual Studio 17 2022" -A x64 `
           -DGGML_RPC=ON `
@@ -88,7 +97,7 @@ jobs:
           -DCMAKE_BUILD_TYPE=Release `
           -DBUILD_SHARED_LIBS=OFF
 
-        # 限制并行度防止 OOM (GitHub Windows runner 通常 4 核，CUDA 编译极耗内存)
+        # 限制并行度防止 OOM
         cmake --build build --config Release -j2 `
           --target llama-cli `
           --target llama-server `
