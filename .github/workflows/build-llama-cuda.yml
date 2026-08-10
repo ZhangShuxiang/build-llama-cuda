@@ -86,7 +86,6 @@ jobs:
         cd llama
         # CMake 配置
         cmake -B build \
-          -G "Ninja" \
           -DGGML_RPC=ON \
           -DGGML_CUDA=ON \
           -DGGML_CUDA_FORCE_MMQ=OFF \
@@ -95,9 +94,16 @@ jobs:
           -DGGML_CUDA_GRAPHS=ON \
           -DCMAKE_CUDA_ARCHITECTURES="$CUDA_ARCHS" \
           -DCMAKE_BUILD_TYPE=Release \
-          -DBUILD_SHARED_LIBS=OFF \
-        # 编译 (使用 Ninja)
-        ninja -C build -j$(nproc)
+          -DBUILD_SHARED_LIBS=OFF
+        # 编译用cmake--build传target
+        cmake --build build -j$(nproc) \
+          --target llama-cli \
+          --target llama-server \
+          --target llama-quantize \
+          --target llama-bench \
+          --target llama-gguf \
+          --target llama-gguf-split \
+          --target ggml-rpc-server
         # 列出文件
         ls -la build/bin/
     # ============================================
