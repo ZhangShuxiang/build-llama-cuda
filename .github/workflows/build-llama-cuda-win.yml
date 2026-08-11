@@ -6,12 +6,11 @@ on:
       cuda_version:
         description: 'CUDA Version'
         required: false
-        default: '13.2.0'
+        default: '13.3.0'
         type: choice
         options:
-          - '13.2.0'
-          - '12.8.0'
-          - '12.6.0'
+          - '13.3.0'
+          - '12.9.0'
       cuda_arch:
         description: 'CUDA Architectures'
         required: false
@@ -20,8 +19,6 @@ on:
         options:
           - '75;80;86;89'           # Turing+ (RTX 20/30/40, CUDA 12.8+)
           - '80;86;89'              # Ampere+ (RTX 30/40)
-          - '89;90'                 # Ada Lovelace + Hopper
-          - '90'                    # Hopper only
 
 permissions:
   contents: write
@@ -34,15 +31,11 @@ jobs:
 
     env:
       CUDA_ARCHS: ${{ github.event.inputs.cuda_arch || '80;86;89' }}
-      CUDA_VERSION: ${{ github.event.inputs.cuda_version || '13.2.0' }}
+      CUDA_VERSION: ${{ github.event.inputs.cuda_version || '13.3.0' }}
 
     steps:
     # ============================================
     # 步骤1: 安装 CUDA Toolkit (完整安装)
-    # ============================================
-    # CUDA 13.x 在 Windows 上使用 sub-packages 筛选时，crt/ 目录下的
-    # 头文件可能不会被正确安装，导致 "crt/host_config.h: No such file"
-    # 因此不使用 sub-packages，让 action 完整安装 CUDA Toolkit
     # ============================================
     - name: Install CUDA Toolkit
       uses: Jimver/cuda-toolkit@v0.2.36
@@ -150,7 +143,3 @@ jobs:
         token: ${{ secrets.GITHUB_TOKEN }}
         files: windows-llama-cuda.zip
         tag_name: windows-llama-cuda-${{ github.sha }}
-        draft: true
-        prerelease: true
-        generate_release_notes: true
-        fail_on_unmatched_files: true
