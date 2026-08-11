@@ -6,10 +6,11 @@ on:
       cuda_version:
         description: 'CUDA Version'
         required: false
-        default: '13.2'
+        default: '13.3'
         type: choice
         options:
-          - '13.2'
+          - '13.3'
+          - '12.9'
       cuda_arch:
         description: 'CUDA Architectures'
         required: false
@@ -19,7 +20,6 @@ on:
           - '60;61;70;75;80;86;89'  # 广泛兼容 (Pascal+)
           - '70;75;80;86;89'        # Volta+ (V100, RTX 20/30/40)
           - '80;86;89'              # Ampere+ (RTX 30/40)
-          - '89;90'                 # Ada Lovelace + Hopper
 
 jobs:
   build-linux-cuda:
@@ -29,7 +29,7 @@ jobs:
 
     env:
       CUDA_ARCHS: ${{ github.event.inputs.cuda_arch || '80;86;89' }}
-      CUDA_VERSION: ${{ github.event.inputs.cuda_version || '13.2' }}
+      CUDA_VERSION: ${{ github.event.inputs.cuda_version || '13.3' }}
 
     steps:
     # ============================================
