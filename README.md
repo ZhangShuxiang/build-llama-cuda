@@ -21,7 +21,7 @@ Ubuntu24.04安装NVIDIA驱动简单指南
 lspci | grep -i nvidia
 如果看到类似输出：
 01:00.0 VGA compatible controller: NVIDIA Corporation Device 2d04 (rev a1)
-01:00.1 Audio device: NVIDIA Corporation Device 22eb (rev a1)@改一下配置文件
+01:00.1 Audio device: NVIDIA Corporation Device 22eb (rev a1)
 说明：硬件没问题只是驱动没装
 二、让Ubuntu自动推荐驱动
 Ubuntu 24.04自带自动驱动推荐工具：
