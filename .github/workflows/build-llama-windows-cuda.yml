@@ -52,7 +52,6 @@ jobs:
             -DLLAMA_BUILD_EXAMPLES=OFF ^
             -DGGML_NATIVE=OFF ^
             -DGGML_BACKEND_DL=ON ^
-            -DCMAKE_BUILD_TYPE=Release ^
             -DBUILD_SHARED_LIBS=ON
           set /A NINJA_JOBS=%NUMBER_OF_PROCESSORS%-1
           cmake --build build --config Release -j %NINJA_JOBS% --target llama-cli llama-server rpc-server
@@ -65,11 +64,11 @@ jobs:
           Get-ChildItem "$cudaBin\cudart64_*.dll",
                         "$cudaBin\cublas64_*.dll",
                         "$cudaBin\cublasLt64_*.dll" | Copy-Item -Destination $dst -Force
-          $zip = "llama-portable-win-cuda-${{ inputs.cuda_version }}-x64.zip"
+          $zip = "llama-win-cuda-${{ inputs.cuda_version }}-x64.zip"
           Compress-Archive -Path ".\build\bin\Release\*" -DestinationPath $zip -Force
 
       - name: Upload
         uses: actions/upload-artifact@v6
         with:
-          name: llama-bin-win-cuda-${{ inputs.cuda_version }}-x64
-          path: llama-bin-win-cuda-${{ inputs.cuda_version }}-x64.zip
+          name: llama-win-cuda-${{ inputs.cuda_version }}-x64
+          path: llama-win-cuda-${{ inputs.cuda_version }}-x64.zip
