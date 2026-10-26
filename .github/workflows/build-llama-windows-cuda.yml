@@ -64,11 +64,17 @@ jobs:
           Get-ChildItem "$cudaBin\cudart64_*.dll",
                         "$cudaBin\cublas64_*.dll",
                         "$cudaBin\cublasLt64_*.dll" | Copy-Item -Destination $dst -Force
-          $zip = "llama-win-cuda-${{ inputs.cuda_version }}-x64.zip"
-          Compress-Archive -Path ".\build\bin\Release\*" -DestinationPath $zip -Force
 
       - name: Upload
         uses: actions/upload-artifact@v6
         with:
           name: llama-win-cuda-${{ inputs.cuda_version }}-x64
-          path: llama-win-cuda-${{ inputs.cuda_version }}-x64.zip
+          path: ./build/bin/Release
+
+      - name: Upload release
+        uses: softprops/action-gh-release@v3
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: llama-win-cuda-${{ inputs.cuda_version }}-x64-${{ github.sha }}
+          files: ./build/bin/Release/*
