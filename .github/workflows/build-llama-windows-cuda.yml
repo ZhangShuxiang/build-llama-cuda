@@ -1,0 +1,78 @@
+name: Build llama-windows-cuda
+
+on:
+  workflow_dispatch:
+    inputs:
+      cuda_version:
+        description: 'CUDA版本'
+        required: true
+        default: '12.4'
+        type: choice
+        options:
+          - '12.4'
+          - '13.4'
+
+env:
+  GGML_NLOOP: 3
+  GGML_N_THREADS: 1
+
+jobs:
+  build-cuda:
+    name: llama-windows-cuda
+    runs-on: windows-2022
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout llama.cpp
+        uses: actions/checkout@v6
+        with:
+          repository: ggml-org/llama.cpp
+          ref: master
+
+      - name: Install CUDA Toolkit
+        uses: ./.github/actions/windows-setup-cuda
+        with:
+          cuda_version: ${{ inputs.cuda_version }}
+          cuda_arch: x64
+
+      - name: Install Ninja
+        run: choco install ninja -y
+
+      - name: Configure & Build
+        shell: cmd
+        run: |
+          call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvarsall.bat" x64
+          cmake -S . -B build -G "Ninja Multi-Config" ^
+            -DGGML_CUDA=ON ^
+            -DGGML_RPC=ON ^
+            -DLLAMA_BUILD_SERVER=ON ^
+            -DLLAMA_CURL=OFF ^
+            -DLLAMA_BUILD_TESTS=OFF ^
+            -DLLAMA_BUILD_EXAMPLES=OFF ^
+            -DGGML_NATIVE=OFF ^
+            -DBUILD_SHARED_LIBS=ON ^
+            -DGGML_BACKEND_DL=ON
+          set /A NINJA_JOBS=%NUMBER_OF_PROCESSORS%-1
+          cmake --build build --config Release -j %NINJA_JOBS% --target llama-cli llama-server rpc-server
+
+      - name: Stage CUDA runtimes
+        shell: pwsh
+        run: |
+          $dst = ".\build\bin\Release"
+          $cudaBin = $env:CUDA_PATH + "\bin"
+          Get-ChildItem "$cudaBin\cudart64_*.dll",
+                        "$cudaBin\cublas64_*.dll",
+                        "$cudaBin\cublasLt64_*.dll" | Copy-Item -Destination $dst -Force
+
+      - name: Package
+        shell: pwsh
+        run: |
+          $zip = "llama-portable-win-cuda-${{ inputs.cuda_version }}-x64.zip"
+          Compress-Archive -Path ".\build\bin\Release\*" -DestinationPath $zip -Force
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: llama-bin-win-cuda-${{ inputs.cuda_version }}-x64
+          path: llama-bin-win-cuda-${{ inputs.cuda_version }}-x64.zip
