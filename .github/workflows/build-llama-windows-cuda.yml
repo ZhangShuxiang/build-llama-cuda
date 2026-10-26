@@ -54,7 +54,7 @@ jobs:
             -DGGML_BACKEND_DL=ON ^
             -DBUILD_SHARED_LIBS=ON
           set /A NINJA_JOBS=%NUMBER_OF_PROCESSORS%-1
-          cmake --build build --config Release -j %NINJA_JOBS% --target llama-cli llama-server rpc-server
+          cmake --build build --config Release -j %NINJA_JOBS% --target llama-cli llama-server ggml-rpc-server
 
       - name: Package
         shell: pwsh
