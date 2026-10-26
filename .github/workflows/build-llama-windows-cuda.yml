@@ -21,7 +21,7 @@ jobs:
     name: llama-windows-cuda
     runs-on: windows-2022
     permissions:
-      contents: read
+      contents: write
 
     steps:
       - name: Checkout llama.cpp
@@ -77,4 +77,5 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tag_name: llama-win-cuda-${{ inputs.cuda_version }}-x64-${{ github.sha }}
+          name: llama-win-cuda-${{ inputs.cuda_version }}-x64
           files: ./build/bin/Release/*
