@@ -1,0 +1,251 @@
+
+name: Build llama-linux-cuda
+
+on:
+  workflow_dispatch:
+    inputs:
+      cuda_version:
+        description: 'CUDA 版本'
+        required: true
+        default: '12.6.2'
+        type: choice
+        options:
+          - '12.6.2'
+          - '12.4.1'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-llama-linux-cuda-${{ inputs.cuda_version }}
+  cancel-in-progress: false
+
+env:
+  GGML_NLOOP: 3
+  GGML_N_THREADS: 1
+  LLAMA_ARG_LOG_COLORS: 1
+  LLAMA_ARG_LOG_PREFIX: 1
+  LLAMA_ARG_LOG_TIMESTAMPS: 1
+
+jobs:
+  build-cuda:
+    name: llama-linux-cuda-${{ inputs.cuda_version }}
+    runs-on: ubuntu-24.04
+
+    # 两个 CUDA 版本均使用 Ubuntu 22.04 开发镜像，
+    # 避免旧 CUDA 版本没有 Ubuntu 24.04 镜像的问题。
+    container:
+      image: nvidia/cuda:${{ inputs.cuda_version }}-devel-ubuntu22.04
+
+    steps:
+      - name: Checkout llama.cpp
+        uses: actions/checkout@v6
+        with:
+          repository: ggml-org/llama.cpp
+          ref: master
+          fetch-depth: 1
+
+      # checkout 与后续步骤可能使用不同的容器用户。
+      - name: Configure Git safe directory
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: Install dependencies
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          set -eux
+
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            build-essential \
+            cmake \
+            ninja-build \
+            ccache \
+            git \
+            libssl-dev \
+            libcurl4-openssl-dev \
+            libgomp1 \
+            pkg-config \
+            patchelf \
+            ca-certificates \
+            file
+
+          rm -rf /var/lib/apt/lists/*
+
+      - name: Cache ccache
+        uses: actions/cache@v4
+        with:
+          path: /root/.cache/ccache
+          key: linux-cuda-${{ inputs.cuda_version }}-${{ github.sha }}
+          restore-keys: |
+            linux-cuda-${{ inputs.cuda_version }}-
+
+      - name: Configure ccache
+        run: |
+          set -eux
+
+          mkdir -p /root/.cache/ccache
+          ccache --set-config=cache_dir=/root/.cache/ccache
+          ccache --set-config=compression=true
+          ccache --max-size=2G
+          ccache --show-config
+
+      - name: Configure CMake
+        run: |
+          set -eux
+
+          nvcc --version
+          cmake --version
+
+          cmake -S . -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_RPATH='$ORIGIN' \
+            -DCMAKE_BUILD_WITH_INSTALL_RPATH=ON \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_CUDA_COMPILER_LAUNCHER=ccache \
+            -DGGML_CUDA=ON \
+            -DGGML_RPC=ON \
+            -DGGML_NATIVE=OFF \
+            -DGGML_BACKEND_DL=ON \
+            -DGGML_CUDA_NCCL=OFF \
+            -DLLAMA_BUILD_SERVER=ON \
+            -DLLAMA_BUILD_TESTS=OFF \
+            -DLLAMA_BUILD_EXAMPLES=OFF \
+            -DLLAMA_BUILD_TOOLS=ON \
+            -DLLAMA_CURL=ON \
+            -DBUILD_SHARED_LIBS=ON
+
+      - name: Build
+        run: |
+          set -eux
+
+          cmake --build build \
+            --config Release \
+            --parallel "$(nproc)"
+
+      - name: Verify build outputs
+        run: |
+          set -eux
+
+          for bin in llama-cli llama-server ggml-rpc-server; do
+            test -x "build/bin/$bin"
+            file "build/bin/$bin"
+          done
+
+          echo "=== Build outputs ==="
+          find build/bin -maxdepth 2 \
+            \( -type f -o -type l \) -print
+
+          echo "=== CUDA compiler ==="
+          nvcc --version
+
+      - name: Package
+        run: |
+          set -euo pipefail
+
+          DST="$GITHUB_WORKSPACE/dist"
+          CUDA_ROOT="${CUDA_PATH:-/usr/local/cuda}"
+
+          mkdir -p "$DST"
+
+          # 1. 复制所有构建产物，包括共享库和动态后端插件。
+          cp -a build/bin/. "$DST/"
+
+          # 2. 复制项目许可证。
+          cp LICENSE "$DST/"
+
+          # 3. 复制常用 CUDA 运行时库及其符号链接。
+          # 不复制 libcuda.so；它属于 NVIDIA 驱动侧库。
+          for lib in \
+            libcudart.so \
+            libcublas.so \
+            libcublasLt.so \
+            libnvJitLink.so \
+            libnvrtc.so \
+            libnvrtc-builtins.so; do
+
+            while IFS= read -r -d '' src; do
+              cp -a "$src" "$DST/"
+            done < <(
+              find "$CUDA_ROOT" \
+                \( -type f -o -type l \) \
+                -name "${lib}*" \
+                -print0 2>/dev/null
+            )
+          done
+
+          # 4. 为可执行文件及项目共享库设置相对 RPATH。
+          # $ORIGIN 表示当前 ELF 文件所在的目录。
+          while IFS= read -r -d '' elf; do
+            if file "$elf" | grep -q ELF; then
+              patchelf --set-rpath '$ORIGIN' "$elf"
+            fi
+          done < <(
+            find "$DST" -maxdepth 1 -type f -print0
+          )
+
+          # 5. 记录构建信息。
+          {
+            echo "llama.cpp Linux CUDA build"
+            echo "CUDA version: ${{ inputs.cuda_version }}"
+            echo "Commit: $GITHUB_SHA"
+            echo "Build date: $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+            echo
+            echo "Requirements:"
+            echo "- x86_64 Linux"
+            echo "- Compatible NVIDIA GPU and host NVIDIA driver"
+            echo "- CUDA Toolkit is not required on the target machine"
+            echo "- Standard OS runtime libraries may still be required"
+            echo
+            echo "Usage:"
+            echo "./llama-cli --help"
+            echo "./llama-server --help"
+            echo "./ggml-rpc-server --help"
+            echo
+            echo "The NVIDIA driver library libcuda.so is not bundled."
+          } > "$DST/README.txt"
+
+          # 6. 生成压缩包。
+          ARCHIVE="llama-linux-cuda-${{ inputs.cuda_version }}-x64.tar.gz"
+
+          tar -czf "$ARCHIVE" -C "$DST" .
+
+          # 7. 检查压缩包。
+          test -s "$ARCHIVE"
+          tar -tzf "$ARCHIVE" >/dev/null
+
+          echo "=== Archive ==="
+          ls -lh "$ARCHIVE"
+
+          echo "=== ccache statistics ==="
+          ccache --show-stats
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: llama-linux-cuda-${{ inputs.cuda_version }}-x64
+          path: llama-linux-cuda-${{ inputs.cuda_version }}-x64.tar.gz
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30
+
+      - name: Upload release
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: llama-linux-cuda-${{ inputs.cuda_version }}-x64-${{ github.sha }}
+          name: llama-linux-cuda-${{ inputs.cuda_version }}-x64
+          body: |
+            llama.cpp Linux CUDA build
+
+            CUDA version: ${{ inputs.cuda_version }}
+            Architecture: x86_64
+            Commit: ${{ github.sha }}
+
+            Requires a compatible NVIDIA driver on the target machine.
+          files: llama-linux-cuda-${{ inputs.cuda_version }}-x64.tar.gz
+          fail_on_unmatched_files: true
+          generate_release_notes: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
