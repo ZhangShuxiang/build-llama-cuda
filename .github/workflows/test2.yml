@@ -38,10 +38,11 @@ jobs:
       - name: Package
         shell: pwsh
         run: |
+          md build
           $cudaBin = Join-Path $env:CUDA_PATH "bin\x64"
-          Copy-Item $cudaBin\cudart64_*.dll -Destination ./build/bin/Release -Force
-          Copy-Item $cudaBin\cudart64_*.dll -Destination build/bin/Release -Force
-          Copy-Item $cudaBin\cublas64_*.dll -Destination ./build/bin/Release -Force
-          Copy-Item $cudaBin\cublasLt64_*.dll -Destination ./build/bin/Release -Force
-          Get-ChildItem -Path ./build/bin/Release
-          Get-ChildItem -Path build/bin/Release
+          Copy-Item $cudaBin\cudart64_*.dll -Destination ./build -Force
+          Copy-Item $cudaBin\nvblas64_*.dll -Destination build -Force
+          Copy-Item $cudaBin\cublas64_*.dll -Destination ./build -Force
+          Copy-Item $cudaBin\cublasLt64_*.dll -Destination ./build -Force
+          Get-ChildItem -Path ./build
+          Get-ChildItem -Path build
