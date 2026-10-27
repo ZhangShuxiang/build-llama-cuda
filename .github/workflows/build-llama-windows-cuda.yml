@@ -60,11 +60,14 @@ jobs:
         run: |
           $dst = ".\build\bin\Release"
           $cudaBin = $env:CUDA_PATH + "\bin"
+          $cudaLib = $env:CUDA_PATH + "\lib"
+          Get-ChildItem -Path "$cudaBin"
+          Get-ChildItem -Path "$cudaLib"
           Get-ChildItem "$cudaBin\cudart64_*.dll",
                         "$cudaBin\cublas64_*.dll",
                         "$cudaBin\cublasLt64_*.dll" | Copy-Item -Destination $dst -Force
 
-      - name: Upload
+      - name: Upload artifact
         uses: actions/upload-artifact@v6
         with:
           name: llama-win-cuda-${{ inputs.cuda_version }}-x64
