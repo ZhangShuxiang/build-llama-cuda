@@ -6,10 +6,9 @@ on:
       cuda_version:
         description: 'CUDA版本'
         required: true
-        default: '12.4'
+        default: '13.4'
         type: choice
         options:
-          - '12.4'
           - '13.4'
 
 env:
