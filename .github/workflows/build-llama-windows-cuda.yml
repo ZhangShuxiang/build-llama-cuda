@@ -59,9 +59,10 @@ jobs:
         shell: pwsh
         run: |
           $cudaBin = Join-Path $env:CUDA_PATH "bin\x64"
-          Copy-Item $cudaBin\cudart64_*.dll -Destination ./build/bin/Release -Force
-          Copy-Item $cudaBin\cublas64_*.dll -Destination ./build/bin/Release -Force
-          Copy-Item $cudaBin\cublasLt64_*.dll -Destination ./build/bin/Release -Force
+          Copy-Item $cudaBin\cudart64_*.dll -Destination build/bin/Release -Force
+          Copy-Item $cudaBin\cublas64_*.dll -Destination build/bin/Release -Force
+          Copy-Item $cudaBin\cublasLt64_*.dll -Destination build/bin/Release -Force
+          Get-ChildItem -Path build/bin/Release
 
       - name: Upload artifact
         uses: actions/upload-artifact@v6
