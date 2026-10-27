@@ -1,4 +1,4 @@
-name: test
+name: test1
 
 on:
   workflow_dispatch:
@@ -55,8 +55,7 @@ jobs:
         run: |
           mkdir -p build
           cudaBin=/usr/local/cuda/lib64
-          ls -l /usr/local/cuda/lib64
-          cp $cudaBin/libcudart.so.*.* ./build/
-          cp $cudaBin/libcublas.so.*.* ./build/
-          cp $cudaBin/libcublasLt.so.*.* ./build/
+          cp $cudaBin/libcudart.so.*.* ./build/libcudart.so
+          cp $cudaBin/libcublas.so.*.* ./build/libcublas.so
+          cp $cudaBin/libcublasLt.so.*.* ./build/libcublasLt.so
           ls -l ./build
