@@ -61,11 +61,13 @@ jobs:
             -DGGML_RPC=ON \
             -DLLAMA_BUILD_SERVER=ON \
             -DLLAMA_CURL=OFF \
+            -DLLAMA_OPENSSL=OFF \
             -DLLAMA_BUILD_TESTS=OFF \
             -DLLAMA_BUILD_EXAMPLES=OFF \
             -DGGML_NATIVE=OFF \
             -DBUILD_SHARED_LIBS=OFF
-          cmake --build build --config Release -j $(nproc) --target llama-cli llama-server ggml-rpc-server
+          cmake --build build --config Release -j $(nproc) \
+            --target llama-cli llama-server ggml-rpc-server
 
       - name: Upload artifact
         uses: actions/upload-artifact@v6
