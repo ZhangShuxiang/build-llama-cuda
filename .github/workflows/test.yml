@@ -1,0 +1,62 @@
+name: test
+
+on:
+  workflow_dispatch:
+    inputs:
+      cuda_version:
+        description: 'CUDA 版本'
+        required: true
+        default: '13.4.3'
+        type: choice
+        options:
+          - '13.4.3'
+
+env:
+  GGML_NLOOP: 3
+  GGML_N_THREADS: 1
+  LLAMA_ARG_LOG_COLORS: 1
+  LLAMA_ARG_LOG_PREFIX: 1
+  LLAMA_ARG_LOG_TIMESTAMPS: 1
+
+jobs:
+  build-cuda:
+    name: llama-linux-cuda
+    runs-on: ubuntu-24.04
+    container: nvidia/cuda:${{ inputs.cuda_version }}-devel-ubuntu24.04
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout llama.cpp
+        uses: actions/checkout@v6
+        with:
+          repository: ggml-org/llama.cpp
+          ref: master
+
+      - name: Install dependencies
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            build-essential \
+            cmake \
+            ninja-build \
+            ccache \
+            git \
+            libssl-dev \
+            libcurl4-openssl-dev \
+            libgomp1 \
+            pkg-config \
+            patchelf \
+            ca-certificates
+
+      - name: CUDA libraries
+        run: |
+          mkdir -p build
+          cudaBin=/usr/local/cuda/lib64
+          ls -l $cudaBin
+          cp $cudaBin/libcudart.so* ./build/
+          cp $cudaBin/libcublas.so* ./build/
+          cp $cudaBin/libcublasLt.so* ./build/
+          ls -l ./build
