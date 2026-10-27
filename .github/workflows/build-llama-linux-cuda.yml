@@ -72,9 +72,9 @@ jobs:
       - name: CUDA libraries
         run: |
           cudaBin=/usr/local/cuda/lib64
-          cp $cudaBin/libcudart.so* ./build/bin/
-          cp $cudaBin/libcublas.so* ./build/bin/
-          cp $cudaBin/libcublasLt.so* ./build/bin/
+          cp $cudaBin/libcudart.so.*.* ./build/bin/libcudart.so
+          cp $cudaBin/libcublas.so.*.* ./build/bin/libcublas.so
+          cp $cudaBin/libcublasLt.so.*.* ./build/bin/libcublasLt.so
 
       - name: Upload artifact
         uses: actions/upload-artifact@v6
