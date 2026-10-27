@@ -38,21 +38,10 @@ jobs:
       - name: Package
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force -Path build | Out-Null
-      
           $cudaBin = Join-Path $env:CUDA_PATH "bin\x64"
-          $cudaLib = Join-Path $env:CUDA_PATH "lib\x64"
-      
-          Write-Host "== bin =="
-          Get-ChildItem -Path $cudaBin
-          Write-Host "== lib\x64 =="
-          Get-ChildItem -Path $cudaLib
-      
-          # DLL 在 bin 目录，命名是 cudart64_13.dll 这种形式
-          foreach ($pattern in @("cudart64_*.dll", "cublas64_*.dll", "cublasLt64_*.dll")) {
-            Get-ChildItem -Path $cudaBin -Filter $pattern -File |
-              Copy-Item -Destination build -Force
-          }
-      
-          Write-Host "== build =="
-          Get-ChildItem -Path build
+          Copy-Item $cudaBin\cudart64_*.dll -Destination ./build/bin/Release -Force
+          Copy-Item $cudaBin\cudart64_*.dll -Destination build/bin/Release -Force
+          Copy-Item $cudaBin\cublas64_*.dll -Destination ./build/bin/Release -Force
+          Copy-Item $cudaBin\cublasLt64_*.dll -Destination ./build/bin/Release -Force
+          Get-ChildItem -Path ./build/bin/Release
+          Get-ChildItem -Path build/bin/Release
