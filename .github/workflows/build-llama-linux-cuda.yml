@@ -75,7 +75,7 @@ jobs:
           cp $cudaBin/libcudart.so.*.* ./build/bin/libcudart.so
           cp $cudaBin/libcublas.so.*.* ./build/bin/libcublas.so
           cp $cudaBin/libcublasLt.so.*.* ./build/bin/libcublasLt.so
-          ls -l ./build/bin/
+          ls -l ./build/bin
 
       - name: Upload artifact
         uses: actions/upload-artifact@v6
