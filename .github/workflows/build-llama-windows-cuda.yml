@@ -48,6 +48,7 @@ jobs:
             -DGGML_RPC=ON ^
             -DLLAMA_BUILD_SERVER=ON ^
             -DLLAMA_CURL=OFF ^
+            -DLLAMA_OPENSSL=OFF ^
             -DLLAMA_BUILD_TESTS=OFF ^
             -DLLAMA_BUILD_EXAMPLES=OFF ^
             -DGGML_NATIVE=OFF ^
