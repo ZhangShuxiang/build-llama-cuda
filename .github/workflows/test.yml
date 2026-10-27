@@ -55,8 +55,8 @@ jobs:
         run: |
           mkdir -p build
           cudaBin=/usr/local/cuda/lib64
-          ls -l $cudaBin
-          cp $cudaBin/libcudart.so* ./build/
-          cp $cudaBin/libcublas.so* ./build/
-          cp $cudaBin/libcublasLt.so* ./build/
+          ls -l /usr/local/cuda/lib64
+          cp $cudaBin/libcudart.so.*.*.*.* ./build/
+          cp $cudaBin/libcublas.so.*.*.*.* ./build/
+          cp $cudaBin/libcublasLt.so.*.*.*.* ./build/
           ls -l ./build
