@@ -40,9 +40,7 @@ jobs:
         run: |
           md build
           $cudaBin = Join-Path $env:CUDA_PATH "bin\x64"
-          Copy-Item $cudaBin\cudart64_*.dll -Destination ./build -Force
-          Copy-Item $cudaBin\nvblas64_*.dll -Destination build -Force
-          Copy-Item $cudaBin\cublas64_*.dll -Destination ./build -Force
-          Copy-Item $cudaBin\cublasLt64_*.dll -Destination ./build -Force
-          Get-ChildItem -Path ./build
+          Copy-Item $cudaBin\cudart64_*.dll -Destination build -Force
+          Copy-Item $cudaBin\cublas64_*.dll -Destination build -Force
+          Copy-Item $cudaBin\cublasLt64_*.dll -Destination build -Force
           Get-ChildItem -Path build
