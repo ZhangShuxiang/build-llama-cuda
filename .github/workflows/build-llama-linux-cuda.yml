@@ -69,6 +69,13 @@ jobs:
           cmake --build build --config Release -j $(nproc) \
             --target llama-cli llama-server ggml-rpc-server
 
+      - name: CUDA libraries
+        run: |
+          cudaBin=/usr/local/cuda/lib64
+          cp $cudaBin/libcudart.so* ./build/bin/
+          cp $cudaBin/libcublas.so* ./build/bin/
+          cp $cudaBin/libcublasLt.so* ./build/bin/
+
       - name: Upload artifact
         uses: actions/upload-artifact@v6
         with:
