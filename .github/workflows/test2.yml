@@ -1,0 +1,49 @@
+name: test2
+
+on:
+  workflow_dispatch:
+    inputs:
+      cuda_version:
+        description: 'CUDA版本'
+        required: true
+        default: '13.4'
+        type: choice
+        options:
+          - '13.4'
+
+env:
+  GGML_NLOOP: 3
+  GGML_N_THREADS: 1
+
+jobs:
+  build-cuda:
+    name: llama-windows-cuda
+    runs-on: windows-2022
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout llama.cpp
+        uses: actions/checkout@v6
+        with:
+          repository: ggml-org/llama.cpp
+          ref: master
+
+      - name: Install CUDA Toolkit
+        uses: ./.github/actions/windows-setup-cuda
+        with:
+          cuda_version: ${{ inputs.cuda_version }}
+          cuda_arch: x64
+
+      - name: Package
+        shell: pwsh
+        run: |
+          md .\build
+          $cudaBin = $env:CUDA_PATH + "\bin"
+          $cudaLib = $env:CUDA_PATH + "\lib\x64"
+          Get-ChildItem -Path "$cudaBin"
+          Get-ChildItem -Path "$cudaLib"
+          Get-ChildItem "$cudaLib\cudart64_*.dll",
+                        "$cudaLib\cublas64_*.dll",
+                        "$cudaLib\cublasLt64_*.dll" | Copy-Item -Destination .\build -Force
+          Get-ChildItem -Path .\build
